@@ -55,6 +55,23 @@ def compare_wiki_scipy_wasserstein():
 
     # Not the same ...
 
+    # Problem probably is that in the 1st definition/here:
+    # - https://en.wikipedia.org/wiki/Wasserstein_metric#Empirical_distributions
+    # the Wasserstein distance is defined for empirical measures.
+    # This implicitly assumes that the entries of the data vectors are iid
+    # (see: https://en.wikipedia.org/wiki/Empirical_measure).
+    # However, that is not the case in our setting. (At least I think so ???)
+
+    # We should probably use this definition:
+    # https://en.wikipedia.org/wiki/Wasserstein_metric#Higher_dimensions
+
+    # Todo:
+    #  Copy scipies code:
+    #  https://github.com/scipy/scipy/blob/v1.15.1/scipy/stats/_stats_py.py#L9872
+    #  Line 9872, _cdf_distance
+    #  BUT, optimize for pairwise calculation given a matrix input
+    #  e.g. sort matrices once at the beginning ...
+
 
 if __name__ == '__main__':
 
