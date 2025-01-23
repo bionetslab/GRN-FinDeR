@@ -129,7 +129,7 @@ def compute_wasserstein_distances_hexa_split(expression_matrix: pd.DataFrame,
 
 def compute_wasserstein_presort(expression_matrix : pd.DataFrame):
     numpy_matrix = expression_matrix.to_numpy()
-    sorted_matrix = np.sort(numpy_matrix, axis=0)
+    sorted_matrix = np.sort(numpy_matrix, axis=0).T.copy()
     distance_matrix = pdist(sorted_matrix, 'minkowski', p=1.)
     squared_output = squareform(distance_matrix)
     return squared_output
