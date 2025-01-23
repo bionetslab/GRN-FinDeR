@@ -4,12 +4,10 @@ import gc
 import time
 from dask.distributed import Client, LocalCluster
 from statsmodels.stats.multitest import multipletests
-import scanpy as sc
 from arboreto.algo import grnboost2
 from arboreto.utils import load_tf_names
-from pybiomart import Dataset
 from preprocessing import preprocess_data
-from clustering import cluster_genes
+from src.clustering import cluster_genes
 
 
 
@@ -54,8 +52,8 @@ def classical_fdr(expression_matrix: pd.DataFrame,
     Example:
     --------
     >>> import pandas as pd
-    >>> from grn_computation import compute_grn
-    >>> from fdr_calculation import generate_and_evaluate_grns_rnaseq_final
+    >>> from src.grn_computation import compute_grn
+    >>> from src.fdr_calculation import generate_and_evaluate_grns_rnaseq_final
     >>> expression_matrix = pd.read_csv('preprocessed_expression_matrix.csv')
     >>> tf_names_file = 'genenametfs.tsv'
     >>> output_dir = '/path/to/output/directory'
@@ -186,8 +184,8 @@ def fdr_centroid(expression_matrix: pd.DataFrame,
     Example:
     --------
     >>> import pandas as pd
-    >>> from grn_computation import compute_grn
-    >>> from fdr_calculation import generate_and_evaluate_grns_rnaseq_final
+    >>> from src.grn_computation import compute_grn
+    >>> from src.fdr_calculation import generate_and_evaluate_grns_rnaseq_final
     >>> expression_matrix = pd.read_csv('preprocessed_expression_matrix.csv')
     >>> tf_names_file = 'genenametfs.tsv'
     >>> output_dir = '/path/to/output/directory'
@@ -341,8 +339,8 @@ def fdr_rotation(expression_matrix: pd.DataFrame,
     Example:
     --------
     >>> import pandas as pd
-    >>> from grn_computation import compute_grn
-    >>> from fdr_calculation import generate_and_evaluate_grns_rnaseq_final
+    >>> from src.grn_computation import compute_grn
+    >>> from src.fdr_calculation import generate_and_evaluate_grns_rnaseq_final
     >>> expression_matrix = pd.read_csv('preprocessed_expression_matrix.csv')
     >>> tf_names_file = 'genenametfs.tsv'
     >>> output_dir = '/path/to/output/directory'

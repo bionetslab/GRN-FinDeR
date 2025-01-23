@@ -34,7 +34,7 @@ def compute_grn(expression_matrix: pd.DataFrame, tf_names_file: str, output_dir:
     Example:
     --------
     >>> import pandas as pd
-    >>> from grn_computation import compute_grn
+    >>> from src.grn_computation import compute_grn
     >>> expression_matrix = pd.read_csv('preprocessed_expression_matrix.csv')
     >>> tf_names_file = 'genenametfs.tsv'
     >>> output_dir = '/path/to/output/directory'

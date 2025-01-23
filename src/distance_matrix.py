@@ -48,7 +48,7 @@ def compute_wasserstein_distances_hexa_split(expression_matrix: pd.DataFrame,
     Example:
     --------
     >>> import pandas as pd
-    >>> from distance_matrix import compute_wasserstein_distances_rna_hexa_split
+    >>> from src.distance_matrix import compute_wasserstein_distances_rna_hexa_split
     >>> expression_matrix = pd.read_csv('filtered_expression_matrix.csv')
     >>> distance_matrix_df = compute_wasserstein_distances_rna_hexa_split(expression_matrix, batch_size=5000, n_workers=10, memory_limit='150GB')
     >>> print(distance_matrix_df.head())

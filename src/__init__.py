@@ -7,11 +7,9 @@ clustering genes, and performing False Discovery Rate (FDR) calculations.
 """
 
 # Importing functions and classes from each module
-from .preprocessing import preprocess_data
-from .grn_computation import compute_grn
-from .distance_matrix import compute_wasserstein_distances_hexa_split
-from .clustering import cluster_genes
-from .fdr_calculation import classical_fdr, fdr_centroid, fdr_rotation
+from preprocessing import preprocess_data
+from src.clustering import cluster_genes
+from fdr_calculation import classical_fdr, fdr_centroid, fdr_rotation
 
 # Optionally, you can also define __all__ for better import management
 __all__ = [

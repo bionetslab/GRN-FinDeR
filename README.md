@@ -41,7 +41,7 @@ This section shows how to preprocess the expression matrix.
 
 ```python
 import pandas as pd
-from preprocessing import preprocess_data
+from src.preprocessing import preprocess_data
 
 # Load or define an expression matrix
 expression_matrix = pd.DataFrame({
@@ -61,7 +61,7 @@ This section shows how to compute GRNs from the preprocessed expression matrix.
 
 ```python
 import pandas as pd
-from grn_computation import compute_grn
+from src.grn_computation import compute_grn
 
 # Load preprocessed expression matrix and TF names
 expression_matrix = pd.read_csv('preprocessed_expression_matrix.csv')
@@ -79,7 +79,7 @@ This section demonstrates how to compute distance matrices using Wasserstein dis
 
 ```python
 import pandas as pd
-from distance_matrix import compute_wasserstein_distances_rna_hexa_split
+from src.distance_matrix import compute_wasserstein_distances_rna_hexa_split
 
 # Load the filtered expression matrix
 expression_matrix = pd.read_csv('filtered_expression_matrix.csv')
@@ -98,7 +98,7 @@ This section explains how to cluster genes based on the expression data.
 
 ```python
 import pandas as pd
-from clustering import cluster_genes
+from src.clustering import cluster_genes
 
 # Preprocessed expression data
 expression_matrix = pd.DataFrame(...)  # Replace with your data
@@ -117,8 +117,8 @@ This section covers different methods for calculating False Discovery Rates (FDR
 
 ```python
 import pandas as pd
-from grn_computation import compute_grn
-from fdr_calculation import classical_fdr
+from src.grn_computation import compute_grn
+from src.fdr_calculation import classical_fdr
 
 # Load preprocessed expression matrix and TF names
 expression_matrix = pd.read_csv('preprocessed_expression_matrix.csv')
@@ -137,8 +137,8 @@ print(final_grn.head())
 
 ```python
 import pandas as pd
-from grn_computation import compute_grn
-from fdr_calculation import fdr_centroid
+from src.grn_computation import compute_grn
+from src.fdr_calculation import fdr_centroid
 
 # Load preprocessed expression matrix and TF names
 expression_matrix = pd.read_csv('preprocessed_expression_matrix.csv')
@@ -157,8 +157,8 @@ print(final_grn.head())
 
 ```python
 import pandas as pd
-from grn_computation import compute_grn
-from fdr_calculation import fdr_rotation;
+from src.grn_computation import compute_grn
+from src.fdr_calculation import fdr_rotation;
 
 # Load preprocessed expression matrix and TF names
 expression_matrix = pd.read_csv('preprocessed_expression_matrix.csv')

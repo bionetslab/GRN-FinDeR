@@ -30,7 +30,7 @@ def preprocess_data(expression_matrix: pd.DataFrame) -> pd.DataFrame:
     Example:
     --------
     >>> import pandas as pd
-    >>> from preprocessing import preprocess_data
+    >>> from src.preprocessing import preprocess_data
     >>> # Load or define an expression matrix
     >>> expression_matrix = pd.DataFrame({
     ...     'Gene1': [0, 1, 3, 0, 2],
