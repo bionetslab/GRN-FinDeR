@@ -4,6 +4,7 @@ import gc
 import time
 from dask.distributed import Client, LocalCluster
 from scipy.stats import wasserstein_distance
+from scipy.spatial.distance import pdist, squareform
 import dask.bag as db
 
 def compute_wasserstein_distances_hexa_split(expression_matrix: pd.DataFrame, 
@@ -125,3 +126,11 @@ def compute_wasserstein_distances_hexa_split(expression_matrix: pd.DataFrame,
 
     # Return the computed distance matrix
     return distance_matrix_df, time_scipy
+
+def compute_wasserstein_presort(expression_matrix : pd.DataFrame):
+    numpy_matrix = expression_matrix.to_numpy()
+    sorted_matrix = np.sort(numpy_matrix, axis=0)
+    distance_matrix = pdist(sorted_matrix, 'minkowski', p=1.)
+    squared_output = squareform(distance_matrix)
+    return squared_output
+
