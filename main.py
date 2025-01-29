@@ -33,43 +33,61 @@ def time_wiki_wasserstein():
 def compare_wiki_scipy_wasserstein():
 
     import numpy as np
-    from src.distance_matrix import compute_wasserstein_scipy_numba, pairwise_wasserstein_dists
+    import pandas as pd
+    from src.distance_matrix import compute_wasserstein_scipy_numba
     from scipy.stats import wasserstein_distance
 
-    def wasserstein_distance_wiki(u: np.ndarray, v: np.ndarray) -> float:
-
-        u_sorted = np.sort(u)
-        v_sorted = np.sort(v)
-
-        return np.abs(u_sorted - v_sorted).sum()
 
     a = np.random.normal(0, 1, (15000, ))
     b = np.random.normal(1, 1, (15000,))
+    c = np.random.normal(2, 1, (15000,))
 
-    wd_wiki = pairwise_wasserstein_dists(np.vstack((a, b)).T.copy(), 1)
+    expr_matrix = pd.DataFrame(np.vstack((a, b, c)).T.copy())
 
-    wd_scipy = wasserstein_distance(a, b)
+    wd_wiki = compute_wasserstein_scipy_numba(expr_matrix, 4)
+
+    wd_scipy_ab = wasserstein_distance(a, b)
+    wd_scipy_ac = wasserstein_distance(a, c)
+    wd_scipy_bc = wasserstein_distance(b, c)
 
     print(f"WD wiki: {wd_wiki}")
-    print(f"WD scipy: {wd_scipy}")
-    # Not the same ...
+    print(f"WD scipy: {wd_scipy_ab, wd_scipy_ac, wd_scipy_bc}")
 
-    # Problem probably is that in the 1st definition/here:
-    # - https://en.wikipedia.org/wiki/Wasserstein_metric#Empirical_distributions
-    # the Wasserstein distance is defined for empirical measures.
-    # This implicitly assumes that the entries of the data vectors are iid
-    # (see: https://en.wikipedia.org/wiki/Empirical_measure).
-    # However, that is not the case in our setting. (At least I think so ???)
 
-    # We should probably use this definition:
-    # https://en.wikipedia.org/wiki/Wasserstein_metric#Higher_dimensions
 
-    # Todo:
-    #  Copy scipies code:
-    #  https://github.com/scipy/scipy/blob/v1.15.1/scipy/stats/_stats_py.py#L9872
-    #  Line 9872, _cdf_distance
-    #  BUT, optimize for pairwise calculation given a matrix input
-    #  e.g. sort matrices once at the beginning ...
+def numpy_vs_numba_sorting():
+
+    import time
+    import numpy as np
+    from numba import njit, prange, set_num_threads
+
+    @njit(parallel=True, nogil=True)
+    def numba_sort(matrix: np.ndarray, n: int = 4, inplace: bool = True):
+        set_num_threads(n)
+        if not inplace:
+            matrix = matrix.copy()
+
+        for i in prange(matrix.shape[1]):
+            matrix[:, i] = np.sort(matrix[:, i])
+
+        return matrix
+
+    mtrx = np.random.normal(0, 1, (10000, 15000))
+
+    st = time.time()
+    sorted_matrix_numba = numba_sort(mtrx, inplace=False)
+    et = time.time()
+
+    t_numba = et - st
+
+    st = time.time()
+    sorted_matrix_numpy = np.sort(mtrx, axis=0)
+    et = time.time()
+
+    t_npy = et - st
+
+    print(f"# ### Time numba: {t_numba}")
+    print(f"# ### Time numpy: {t_npy}")
 
 
 if __name__ == '__main__':
@@ -77,5 +95,7 @@ if __name__ == '__main__':
     # time_wiki_wasserstein()
 
     compare_wiki_scipy_wasserstein()
+
+    # numpy_vs_numba_sorting()
 
     print("done")
