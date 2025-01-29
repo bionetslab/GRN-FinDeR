@@ -57,7 +57,7 @@ def remove_version_id(data, transcript_column='transcript_id'):
 
 
 
-def subset_protein_coding(biomart, data, transcript_column='Transcript stable ID', mapping_column='Gene type',
+def subset_protein_coding(biomart, data, transcript_column='Gene stable ID', mapping_column='Gene type',
                           mapping_keyword='protein_coding'):
     """
     Remove protein
@@ -85,7 +85,7 @@ def read_tf_list(tf_path, biomart):
     tf_list = pd.read_csv(tf_path, sep='\t', header=None)
     tf_list.columns = ['TF']
     tf_list = tf_list.merge(biomart, left_on='TF', right_on='Gene name')
-    tf_list = tf_list.loc[:, ['TF', 'Gene stable ID', 'Transcript stable ID']].drop_duplicates()
+    tf_list = tf_list.loc[:, ['TF', 'Gene stable ID']].drop_duplicates()
     tf_list = tf_list.reset_index()
     return tf_list
 
@@ -205,10 +205,13 @@ def inference_pipeline_GTEX(config):
     biomart = pd.read_csv(config['biomart'], sep='\t')
     tf_list = read_tf_list(config['tf_list'], biomart)
 
+    print(biomart.head())
+    print(tf_list)
+
     tf_gex, data_gex = create_GTEX_data(config, biomart, tf_list)
     
-    print(f'Full data shape:{data_gex.shape}')
-    print(f'Subset data shape:{tf_gex.shape}')
+    print(f'Full data shape:{data_gex.head()}')
+    print(f'Subset data shape:{tf_gex.head()}')
 
     # instantiate a custom Dask distributed Client
     client = Client(LocalCluster())
