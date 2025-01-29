@@ -6,6 +6,7 @@ from dask.distributed import Client, LocalCluster
 from scipy.stats import wasserstein_distance
 from scipy.spatial.distance import pdist, squareform
 import dask.bag as db
+from numba import njit, prange, set_num_threads
 
 def compute_wasserstein_distances_hexa_split(expression_matrix: pd.DataFrame, 
                                              batch_size: int = 5000, 
@@ -134,3 +135,38 @@ def compute_wasserstein_presort(expression_matrix : pd.DataFrame):
     squared_output = squareform(distance_matrix)
     return squared_output
 
+@njit(parallel=True, nogil=True)
+def pairwise_wasserstein_dists(expression_matrix : np.ndarray, num_threads : int = 4):
+    set_num_threads(num_threads)
+    sorted_matrix = np.sort(expression_matrix)
+    num_cols = expression_matrix.shape[1]
+    num_rows = expression_matrix.shape[0]
+    distance_mat = np.zeros((num_cols, num_cols))
+    for col1 in prange(num_cols):
+        # Exclude diagonal values.
+        for col2 in range(col1, num_cols):
+            all_values = np.concatenate((sorted_matrix[:, col1], sorted_matrix[:, col2]))
+            all_values.sort(kind='mergesort')
+
+            # Compute the differences between pairs of successive values of u and v.
+            deltas = np.diff(all_values)
+
+            # Get the respective positions of the values of u and v among the values of
+            # both distributions.
+            col1_cdf_indices = sorted_matrix[:, col1].searchsorted(all_values[:-1], 'right')
+            col2_cdf_indices = sorted_matrix[:, col2].searchsorted(all_values[:-1], 'right')
+
+            # Calculate the CDFs of u and v using their weights, if specified.
+            col1_cdf = col1_cdf_indices / num_rows
+            col2_cdf = col2_cdf_indices / num_rows
+
+            # Compute the value of the integral based on the CDFs.
+            distance = np.sum(np.multiply(np.abs(col1_cdf - col2_cdf), deltas))
+            distance_mat[col1, col2] = distance
+            distance_mat[col2, col1] = distance
+    return distance_mat
+
+def compute_wasserstein_scipy_numba(expression_mat : pd.DataFrame):
+    numpy_mat = expression_mat.to_numpy()
+    distance_mat = pairwise_wasserstein_dists(numpy_mat)
+    return distance_mat

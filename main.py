@@ -33,7 +33,7 @@ def time_wiki_wasserstein():
 def compare_wiki_scipy_wasserstein():
 
     import numpy as np
-
+    from src.distance_matrix import compute_wasserstein_scipy_numba, pairwise_wasserstein_dists
     from scipy.stats import wasserstein_distance
 
     def wasserstein_distance_wiki(u: np.ndarray, v: np.ndarray) -> float:
@@ -46,13 +46,12 @@ def compare_wiki_scipy_wasserstein():
     a = np.random.normal(0, 1, (15000, ))
     b = np.random.normal(1, 1, (15000,))
 
-    wd_wiki = wasserstein_distance_wiki(a, b)
+    wd_wiki = pairwise_wasserstein_dists(np.vstack((a, b)).T.copy())
 
     wd_scipy = wasserstein_distance(a, b)
 
     print(f"WD wiki: {wd_wiki}")
     print(f"WD scipy: {wd_scipy}")
-
     # Not the same ...
 
     # Problem probably is that in the 1st definition/here:
