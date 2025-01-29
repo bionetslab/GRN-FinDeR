@@ -136,17 +136,16 @@ def compute_wasserstein_presort(expression_matrix : pd.DataFrame):
     return squared_output
 
 @njit(parallel=True, nogil=True)
-def pairwise_wasserstein_dists(expression_matrix, num_threads):
+def pairwise_wasserstein_dists(sorted_matrix, num_threads):
     set_num_threads(num_threads)
-    sorted_matrix = np.sort(expression_matrix)
-    num_cols = expression_matrix.shape[1]
-    num_rows = expression_matrix.shape[0]
+    num_cols = sorted_matrix.shape[1]
+    num_rows = sorted_matrix.shape[0]
     distance_mat = np.zeros((num_cols, num_cols))
     for col1 in prange(num_cols):
-        # Exclude diagonal values.
-        for col2 in range(col1, num_cols):
+        for col2 in range(col1 + 1, num_cols):
             all_values = np.concatenate((sorted_matrix[:, col1], sorted_matrix[:, col2]))
             all_values.sort()
+            # Todo: Implement sorting in linear time here (also include searchsorted if possible)
 
             # Compute the differences between pairs of successive values of u and v.
             deltas = np.diff(all_values)
@@ -155,8 +154,6 @@ def pairwise_wasserstein_dists(expression_matrix, num_threads):
             # both distributions.
             col1_cdf_indices = np.searchsorted(sorted_matrix[:, col1], all_values[:-1], 'right')
             col2_cdf_indices = np.searchsorted(sorted_matrix[:, col2], all_values[:-1], 'right')
-            # col1_cdf_indices = sorted_matrix[:, col1].searchsorted(all_values[:-1], 'right')
-            # col2_cdf_indices = sorted_matrix[:, col2].searchsorted(all_values[:-1], 'right')
 
             # Calculate the CDFs of u and v using their weights, if specified.
             col1_cdf = col1_cdf_indices / num_rows
@@ -168,7 +165,8 @@ def pairwise_wasserstein_dists(expression_matrix, num_threads):
             distance_mat[col2, col1] = distance
     return distance_mat
 
-def compute_wasserstein_scipy_numba(expression_mat : pd.DataFrame):
+def compute_wasserstein_scipy_numba(expression_mat : pd.DataFrame, num_threads: int = 1):
     numpy_mat = expression_mat.to_numpy()
-    distance_mat = pairwise_wasserstein_dists(numpy_mat)
+    numpy_mat = np.sort(numpy_mat, axis=0)
+    distance_mat = pairwise_wasserstein_dists(numpy_mat, num_threads)
     return distance_mat
