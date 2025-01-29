@@ -195,7 +195,7 @@ def create_GTEX_data(config, biomart, tf_list):
     data_gex = data_gex.set_index('gene_id')
 
     tf_gex = data_gex.iloc[~data_gex.index.isin(tf_list['Gene stable ID'].unique()), :]
-    tf_gex = data_gex.reset_index()
+    #tf_gex = data_gex.reset_index()
 
     return tf_gex, data_gex
 
@@ -224,7 +224,7 @@ def inference_pipeline_GTEX(config):
     results_dir_permutation = op.join(results_dir, 'permuted')
     os.makedirs(results_dir_permutation, exist_ok=True)
 
-
+    print(tf_gex.T.head())
 
     file_gene = op.join(results_dir_grn, f"{config['tissue']}_gene_tf.network.tsv")
     grn = compute_and_save_network(tf_gex.T,
