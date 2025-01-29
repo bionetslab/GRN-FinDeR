@@ -90,12 +90,34 @@ def numpy_vs_numba_sorting():
     print(f"# ### Time numpy: {t_npy}")
 
 
+def time_wasserstein():
+
+    import time
+    import numpy as np
+    import pandas as pd
+    from src.distance_matrix import compute_wasserstein_scipy_numba
+
+    mtrx = pd.DataFrame(np.random.normal(0, 1, (10000, 15000)))
+
+    st = time.time()
+
+    dist_mtrx = compute_wasserstein_scipy_numba(mtrx, 16)
+
+    et = time.time()
+
+    print(f'# ### Computation time distance matrix: {et - st}')
+
+
+
+
 if __name__ == '__main__':
 
     # time_wiki_wasserstein()
 
-    compare_wiki_scipy_wasserstein()
+    # compare_wiki_scipy_wasserstein()
 
     # numpy_vs_numba_sorting()
+
+    time_wasserstein()
 
     print("done")
