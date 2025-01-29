@@ -46,7 +46,7 @@ def compare_wiki_scipy_wasserstein():
     a = np.random.normal(0, 1, (15000, ))
     b = np.random.normal(1, 1, (15000,))
 
-    wd_wiki = pairwise_wasserstein_dists(np.vstack((a, b)).T.copy())
+    wd_wiki = pairwise_wasserstein_dists(np.vstack((a, b)).T.copy(), 1)
 
     wd_scipy = wasserstein_distance(a, b)
 
