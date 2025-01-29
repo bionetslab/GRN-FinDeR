@@ -190,11 +190,7 @@ def create_GTEX_data(config, biomart, tf_list):
     # Filter the DataFrame
     data_gex = data_gex[~mask]
 
-    data_gex = data_gex.reset_index()
-    data_gex = remove_version_id(data_gex, 'gene_id')
-    data_gex = data_gex.set_index('gene_id')
-
-    tf_gex = data_gex.iloc[~data_gex.index.isin(tf_list['Gene stable ID'].unique()), :]
+    tf_gex = data_gex.iloc[data_gex.index.isin(tf_list['Gene stable ID'].unique()), :]
     #tf_gex = data_gex.reset_index()
 
     return tf_gex, data_gex
@@ -210,8 +206,8 @@ def inference_pipeline_GTEX(config):
 
     tf_gex, data_gex = create_GTEX_data(config, biomart, tf_list)
     
-    print(f'Full data shape:{data_gex.head()}')
-    print(f'Subset data shape:{tf_gex.head()}')
+    print(f'Full data shape:{data_gex.shape}')
+    print(f'Subset data shape:{tf_gex.shape}')
 
     # instantiate a custom Dask distributed Client
     client = Client(LocalCluster())
@@ -223,8 +219,6 @@ def inference_pipeline_GTEX(config):
     os.makedirs(results_dir_grn, exist_ok=True)
     results_dir_permutation = op.join(results_dir, 'permuted')
     os.makedirs(results_dir_permutation, exist_ok=True)
-
-    print(tf_gex.T.head())
 
     file_gene = op.join(results_dir_grn, f"{config['tissue']}_gene_tf.network.tsv")
     grn = compute_and_save_network(tf_gex.T,
