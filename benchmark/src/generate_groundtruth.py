@@ -14,7 +14,7 @@ from arboreto.utils import load_tf_names
 from arboreto.algo import grnboost2
 import json
 import codecarbon as co
-
+from codecarbon import OfflineEmissionsTracker
 
 
 class TissueNotFoundException(Exception):
