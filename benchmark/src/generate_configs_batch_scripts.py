@@ -2,6 +2,7 @@ import yaml
 import os.path as op
 import os
 
+
 def read_template(path):
     with open(path, 'r') as f:
         config = yaml.safe_load(f)
@@ -30,7 +31,7 @@ def save_jobscript(config, jobscript_path):
         name = t.replace(' ', '_')
         jobscript_file = op.join(jobscript_path, f'{name}_script.sh')
         with open(jobscript_file, 'w') as handle:
-            handle.write(f"#!/bin/bash -l\n#SBATCH --nodes=1\n#SBATCH --ntasks=1\n#SBATCH --cpus-per-task=30\n#SBATCH --time=24:00:00\n#SBATCH --export=NONE\nmodule load python\nconda activate alternet \ncd $WORK/alternet\npython multi-grn/src/preprocessing/inference_pipeline.py -f configs/{name}.yaml  \nconda deactivate")
+            handle.write(f"#!/bin/bash -l\n#SBATCH --nodes=1\n#SBATCH --ntasks=1\n#SBATCH --cpus-per-task=30\n#SBATCH --time=24:00:00\n#SBATCH --export=NONE\nmodule load python\nconda activate alternet \ncd $WORK/alternet\npython GRN-FinDeR/benchmark/source/inference_pipeline.py -f configs/{name}.yaml  \nconda deactivate")
 
 
 if __name__ == '__main__':
