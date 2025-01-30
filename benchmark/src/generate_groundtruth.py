@@ -9,15 +9,16 @@ import re
 import os
 import numpy as np
 
-from distributed import Client, LocalCluster
+from dask_mpi import initialize
+from dask.distributed import Client, LocalCluster
 from arboreto.utils import load_tf_names
 from arboreto.algo import grnboost2
 import json
 import codecarbon as co
 
 from codecarbon import OfflineEmissionsTracker
-
-
+from sklearn.preprocessing import scale
+from dask_jobqueue.slurm import SLURMRunner
 class TissueNotFoundException(Exception):
     pass
 
@@ -172,6 +173,7 @@ def compute_background_model(data, tf_list, client, grn, output_file, yaml_file,
     # List to store results for each iteration
     for i in range(0, samples):
         # Permute the data
+        print(f'Iteration {i}')
         data_permuted = data.sample(frac=1, axis=1)
 
         # Perform the GRNboost2 operation in the main thread (OpenMP handles parallelism)
@@ -182,6 +184,11 @@ def compute_background_model(data, tf_list, client, grn, output_file, yaml_file,
 
         # Update the count in the current thread
         update_count(network)
+        
+        save_interval = 50
+        if (i + 1) % save_interval == 0:
+            print(f"Saving after iteration {i+1}...")
+            save_randomization_counts(count, i + 1, output_file, yaml_file, tissue)
 
     # After all iterations are done, write the final count to the file
     save_randomization_counts(count, samples, output_file, yaml_file, tissue)
@@ -244,11 +251,22 @@ def inference_pipeline_GTEX(config):
     print(tf_list)
 
     data_gex = create_GTEX_data(config, biomart, tf_list)
-    
+ 
+    # genes need to be columns
+    data_gex = data_gex.T
+
+    if config['standardize_data']:
+        data_gex[data_gex.columns] = scale(data_gex.values)
+
     print(f'Full data shape:{data_gex.head()}')
 
     # instantiate a custom Dask distributed Client
-    client = Client(LocalCluster())
+    from dask_jobqueue import SLURMCluster
+
+    cluster = SLURMCluster(queue='work', account="iwbn", cores=30, memory="200 GB", walltime='24:00:00')
+    #cluster = SLURMRunner()
+    cluster.scale(jobs=1)  # ask for 10 jobs
+    client = Client(cluster)
 
 
     ## RUN INFERENCE for transcript based network
@@ -259,7 +277,7 @@ def inference_pipeline_GTEX(config):
     os.makedirs(results_dir_permutation, exist_ok=True)
 
     file_gene = op.join(results_dir_grn, f"{config['tissue']}_gene_tf.network.tsv")
-    grn = compute_and_save_network(data_gex.T,
+    grn = compute_and_save_network(data_gex,
                                     tf_list['Gene stable ID'].unique().tolist(),
                                     client,
                                     file_gene,
@@ -269,7 +287,7 @@ def inference_pipeline_GTEX(config):
     if config['fdr_samples'] > 0:
         file_gene_fdr = op.join(results_dir_permutation, f"{config['tissue']}_gene_tf.count.tsv", )
         yaml_file_gene = op.join(results_dir_permutation, f"{config['tissue']}_gene_metadata.json")
-        compute_background_model(data_gex.T,
+        compute_background_model(data_gex,
                                     tf_list['Gene stable ID'].unique().tolist(),
                                     client,
                                     grn,
@@ -286,7 +304,7 @@ def inference_pipeline_GTEX(config):
     if config['run_full_network']:
         ## Infer Gene based networks with all genes
         file_gene_all = f"{config['tissue']}_gene_all.network.tsv"
-        compute_and_save_network(data_gex.T,
+        compute_and_save_network(data_gex,
                                         tf_list['Gene stable ID'].unique().tolist(),
                                         client,
                                         file_gene_all,
@@ -297,7 +315,7 @@ def inference_pipeline_GTEX(config):
         if config['fdr_samples'] > 0:
             file_gene_fdr_all = op.join(results_dir_permutation, f"{config['tissue']}_gene_all.count.tsv", )
             yaml_file_gene = op.join(results_dir_permutation, f"{config['tissue']}_gene_metadata.json")
-            compute_background_model(data_gex.T,
+            compute_background_model(data_gex,
                                         tf_list['Gene stable ID'].unique().tolist(),
                                         client,
                                         grn,
@@ -330,7 +348,7 @@ if __name__ == "__main__":
     with open(args.f, 'r') as f:
         config = yaml.safe_load(f)
 
-    emissions_file = op.join(config['parent_directory'], config['tissue'], 'emissions.csv')
+    emissions_file = op.join(config['results_dir'], config['tissue'], 'emissions.csv')
     
     with OfflineEmissionsTracker(country_iso_code="DEU", output_file = emissions_file) as tracker:
         inference_pipeline_GTEX(config)
