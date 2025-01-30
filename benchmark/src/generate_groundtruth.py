@@ -14,7 +14,7 @@ from arboreto.utils import load_tf_names
 from arboreto.algo import grnboost2
 import json
 import codecarbon as co
-from codecarbon import OfflineEmissionsTracker
+
 
 
 class TissueNotFoundException(Exception):
@@ -120,31 +120,72 @@ def save_randomization_counts(count, iteration, filename, yaml_file, tissue):
     return r
 
 
+# def compute_background_model(data, tf_list, client, grn, output_file, yaml_file, tissue, samples, tf_column='TF',
+#                              target_column='target', importance_column='importance', use_tf=True):
+#     print('Computing background model')
+#     count = {}
+#     for i, row in grn.iterrows():
+#         count[(row[tf_column], row[target_column])] = {'score': row[importance_column], 'counter': 0}
+#     np.random.seed(22)
+#     for i in range(0, samples):
+#         data_permuted = data.sample(frac=1, axis=1)
+#         if not use_tf:
+#             network = grnboost2(expression_data=data_permuted,
+#                                 client_or_address=client)
+#         else:
+#             network = grnboost2(expression_data=data_permuted,
+#                                 tf_names=tf_list,
+#                                 client_or_address=client)
+#         for row in network.itertuples():
+#             if (row[1], row[2]) in count and (row[3] >= count[(row[1], row[2])]['score']):
+#                 count[(row[1], row[2])]['counter'] += 1
+
+#         rcount = save_randomization_counts(count, i, output_file, yaml_file, tissue)
+
+#     rcount = save_randomization_counts(count, i, output_file, yaml_file, tissue)
+#     return rcount
+
+import threading
+import numpy as np
+
 def compute_background_model(data, tf_list, client, grn, output_file, yaml_file, tissue, samples, tf_column='TF',
                              target_column='target', importance_column='importance', use_tf=True):
     print('Computing background model')
     count = {}
+    lock = threading.Lock()  # Lock to protect the shared count object during updates
+
+    # Initialize the count dictionary for each TF-target pair
     for i, row in grn.iterrows():
         count[(row[tf_column], row[target_column])] = {'score': row[importance_column], 'counter': 0}
+    
     np.random.seed(22)
+
+    # Function to update the count object in a thread-safe manner
+    def update_count(network):
+        nonlocal count
+        with lock:  # Ensure only one thread modifies `count` at a time
+            for row in network.itertuples():
+                if (row[1], row[2]) in count and (row[3] >= count[(row[1], row[2])]['score']):
+                    count[(row[1], row[2])]['counter'] += 1
+
+    # List to store results for each iteration
     for i in range(0, samples):
+        # Permute the data
         data_permuted = data.sample(frac=1, axis=1)
+
+        # Perform the GRNboost2 operation in the main thread (OpenMP handles parallelism)
         if not use_tf:
-            network = grnboost2(expression_data=data_permuted,
-                                client_or_address=client)
+            network = grnboost2(expression_data=data_permuted, client_or_address=client)
         else:
-            network = grnboost2(expression_data=data_permuted,
-                                tf_names=tf_list,
-                                client_or_address=client)
-        for row in network.itertuples():
-            if (row[1], row[2]) in count and (row[3] >= count[(row[1], row[2])]['score']):
-                count[(row[1], row[2])]['counter'] += 1
+            network = grnboost2(expression_data=data_permuted, tf_names=tf_list, client_or_address=client)
 
-        rcount = save_randomization_counts(count, i, output_file, yaml_file, tissue)
+        # Update the count in the current thread
+        update_count(network)
 
-    rcount = save_randomization_counts(count, i, output_file, yaml_file, tissue)
-    return rcount
-
+    # After all iterations are done, write the final count to the file
+    save_randomization_counts(count, samples, output_file, yaml_file, tissue)
+    
+    return count
 
 
 def read_result(outfile, outfile_perm, resultfile_fdr):
@@ -190,7 +231,14 @@ def create_GTEX_data(config, biomart, tf_list):
     # Filter the DataFrame
     data_gex = data_gex[~mask]
 
-    return data_gex
+    data_gex = data_gex.reset_index()
+    data_gex = remove_version_id(data_gex, 'gene_id')
+    data_gex = data_gex.set_index('gene_id')
+
+    tf_gex = data_gex.iloc[~data_gex.index.isin(tf_list['Gene stable ID'].unique()), :]
+    tf_gex = data_gex.reset_index()
+
+    return tf_gex, data_gex
 
 
 def inference_pipeline_GTEX(config):
@@ -201,9 +249,10 @@ def inference_pipeline_GTEX(config):
     print(biomart.head())
     print(tf_list)
 
-    data_gex = create_GTEX_data(config, biomart, tf_list)
+    tf_gex, data_gex = create_GTEX_data(config, biomart, tf_list)
     
-    print(f'Full data shape:{data_gex.shape}')
+    print(f'Full data shape:{data_gex.head()}')
+    print(f'Subset data shape:{tf_gex.head()}')
 
     # instantiate a custom Dask distributed Client
     client = Client(LocalCluster())
@@ -216,8 +265,10 @@ def inference_pipeline_GTEX(config):
     results_dir_permutation = op.join(results_dir, 'permuted')
     os.makedirs(results_dir_permutation, exist_ok=True)
 
+
+
     file_gene = op.join(results_dir_grn, f"{config['tissue']}_gene_tf.network.tsv")
-    grn = compute_and_save_network(data_gex.T,
+    grn = compute_and_save_network(tf_gex.T,
                                     tf_list['Gene stable ID'].unique().tolist(),
                                     client,
                                     file_gene,
@@ -227,7 +278,7 @@ def inference_pipeline_GTEX(config):
     if config['fdr_samples'] > 0:
         file_gene_fdr = op.join(results_dir_permutation, f"{config['tissue']}_gene_tf.count.tsv", )
         yaml_file_gene = op.join(results_dir_permutation, f"{config['tissue']}_gene_metadata.json")
-        compute_background_model(data_gex.T,
+        compute_background_model(tf_gex.T,
                                     tf_list['Gene stable ID'].unique().tolist(),
                                     client,
                                     grn,
