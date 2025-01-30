@@ -204,7 +204,6 @@ def inference_pipeline_GTEX(config):
     data_gex = create_GTEX_data(config, biomart, tf_list)
     
     print(f'Full data shape:{data_gex.shape}')
-    print(f'Subset data shape:{tf_gex.shape}')
 
     # instantiate a custom Dask distributed Client
     client = Client(LocalCluster())
@@ -218,7 +217,7 @@ def inference_pipeline_GTEX(config):
     os.makedirs(results_dir_permutation, exist_ok=True)
 
     file_gene = op.join(results_dir_grn, f"{config['tissue']}_gene_tf.network.tsv")
-    grn = compute_and_save_network(tf_gex.T,
+    grn = compute_and_save_network(data_gex.T,
                                     tf_list['Gene stable ID'].unique().tolist(),
                                     client,
                                     file_gene,
