@@ -9,7 +9,6 @@ import re
 import os
 import numpy as np
 
-from dask_mpi import initialize
 from dask.distributed import Client, LocalCluster
 from arboreto.utils import load_tf_names
 from arboreto.algo import grnboost2
@@ -18,7 +17,6 @@ import codecarbon as co
 
 from codecarbon import OfflineEmissionsTracker
 from sklearn.preprocessing import scale
-from dask_jobqueue.slurm import SLURMRunner
 class TissueNotFoundException(Exception):
     pass
 
@@ -122,78 +120,29 @@ def save_randomization_counts(count, iteration, filename, yaml_file, tissue):
     return r
 
 
-# def compute_background_model(data, tf_list, client, grn, output_file, yaml_file, tissue, samples, tf_column='TF',
-#                              target_column='target', importance_column='importance', use_tf=True):
-#     print('Computing background model')
-#     count = {}
-#     for i, row in grn.iterrows():
-#         count[(row[tf_column], row[target_column])] = {'score': row[importance_column], 'counter': 0}
-#     np.random.seed(22)
-#     for i in range(0, samples):
-#         data_permuted = data.sample(frac=1, axis=1)
-#         if not use_tf:
-#             network = grnboost2(expression_data=data_permuted,
-#                                 client_or_address=client)
-#         else:
-#             network = grnboost2(expression_data=data_permuted,
-#                                 tf_names=tf_list,
-#                                 client_or_address=client)
-#         for row in network.itertuples():
-#             if (row[1], row[2]) in count and (row[3] >= count[(row[1], row[2])]['score']):
-#                 count[(row[1], row[2])]['counter'] += 1
-
-#         rcount = save_randomization_counts(count, i, output_file, yaml_file, tissue)
-
-#     rcount = save_randomization_counts(count, i, output_file, yaml_file, tissue)
-#     return rcount
-
-import threading
-import numpy as np
-
 def compute_background_model(data, tf_list, client, grn, output_file, yaml_file, tissue, samples, tf_column='TF',
                              target_column='target', importance_column='importance', use_tf=True):
     print('Computing background model')
     count = {}
-    lock = threading.Lock()  # Lock to protect the shared count object during updates
-
-    # Initialize the count dictionary for each TF-target pair
     for i, row in grn.iterrows():
         count[(row[tf_column], row[target_column])] = {'score': row[importance_column], 'counter': 0}
-    
     np.random.seed(22)
-
-    # Function to update the count object in a thread-safe manner
-    def update_count(network):
-        nonlocal count
-        with lock:  # Ensure only one thread modifies `count` at a time
-            for row in network.itertuples():
-                if (row[1], row[2]) in count and (row[3] >= count[(row[1], row[2])]['score']):
-                    count[(row[1], row[2])]['counter'] += 1
-
-    # List to store results for each iteration
     for i in range(0, samples):
-        # Permute the data
-        print(f'Iteration {i}')
         data_permuted = data.sample(frac=1, axis=1)
-
-        # Perform the GRNboost2 operation in the main thread (OpenMP handles parallelism)
         if not use_tf:
-            network = grnboost2(expression_data=data_permuted, client_or_address=client)
+            network = grnboost2(expression_data=data_permuted,
+                                client_or_address=client)
         else:
-            network = grnboost2(expression_data=data_permuted, tf_names=tf_list, client_or_address=client)
+            network = grnboost2(expression_data=data_permuted,
+                                tf_names=tf_list,
+                                client_or_address=client)
+        for row in network.itertuples():
+            if (row[1], row[2]) in count and (row[3] >= count[(row[1], row[2])]['score']):
+                count[(row[1], row[2])]['counter'] += 1
 
-        # Update the count in the current thread
-        update_count(network)
-        
-        save_interval = 50
-        if (i + 1) % save_interval == 0:
-            print(f"Saving after iteration {i+1}...")
-            save_randomization_counts(count, i + 1, output_file, yaml_file, tissue)
+    rcount = save_randomization_counts(count, i, output_file, yaml_file, tissue)
 
-    # After all iterations are done, write the final count to the file
-    save_randomization_counts(count, samples, output_file, yaml_file, tissue)
-    
-    return count
+    return rcount
 
 
 def read_result(outfile, outfile_perm, resultfile_fdr):
@@ -260,14 +209,15 @@ def inference_pipeline_GTEX(config):
 
     print(f'Full data shape:{data_gex.head()}')
 
-    # instantiate a custom Dask distributed Client
-    from dask_jobqueue import SLURMCluster
 
-    cluster = SLURMCluster(queue='work', account="iwbn", cores=30, memory="200 GB", walltime='24:00:00')
+    #cluster = SLURMCluster(queue='work', account="iwbn", cores=30, memory="200 GB", walltime='24:00:00')
     #cluster = SLURMRunner()
-    cluster.scale(jobs=1)  # ask for 10 jobs
+    #cluster.scale(jobs=1)  # ask for 10 jobs
+    cluster = LocalCluster(dashboard_address = 'localhost:87878')
     client = Client(cluster)
-
+    print(client)
+    
+    print(f'Client {client.dashboard_link}')
 
     ## RUN INFERENCE for transcript based network
     results_dir = op.join(config['results_dir'], config['tissue'])
@@ -280,6 +230,7 @@ def inference_pipeline_GTEX(config):
     grn = compute_and_save_network(data_gex,
                                     tf_list['Gene stable ID'].unique().tolist(),
                                     client,
+    
                                     file_gene,
                                     use_tf=True)
 
@@ -350,6 +301,6 @@ if __name__ == "__main__":
 
     emissions_file = op.join(config['results_dir'], config['tissue'], 'emissions.csv')
     
-    with OfflineEmissionsTracker(country_iso_code="DEU", output_file = emissions_file) as tracker:
-        inference_pipeline_GTEX(config)
+    #with OfflineEmissionsTracker(country_iso_code="DEU", output_file = emissions_file) as tracker:
+    inference_pipeline_GTEX(config)
 
