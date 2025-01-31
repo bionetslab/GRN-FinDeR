@@ -95,18 +95,46 @@ def time_wasserstein():
     import time
     import numpy as np
     import pandas as pd
-    from src.distance_matrix import compute_wasserstein_scipy_numba
+    from src.distance_matrix import compute_wasserstein_scipy_numba, pairwise_wasserstein_dists
 
     mtrx = pd.DataFrame(np.random.normal(0, 1, (10000, 15000)))
 
-    st = time.time()
+    # st = time.time()
 
-    dist_mtrx = compute_wasserstein_scipy_numba(mtrx, 16)
+    # dist_mtrx = compute_wasserstein_scipy_numba(mtrx, 16)
 
-    et = time.time()
+    # et = time.time()
 
-    print(f'# ### Computation time distance matrix: {et - st}')
+    # print(f'# ### Computation time distance matrix: {et - st}')
 
+    # (10000, 15000), 16 threads: 32799.50227713585
+
+    # (1000, 15000), 16 threads: 2345.9375002384186
+
+
+    st_sorting = time.time()
+
+    mtrx_sorted = np.sort(mtrx, axis=0)
+
+    et_sorting = time.time()
+
+
+    st_dist = time.time()
+
+    distance_mat = pairwise_wasserstein_dists(sorted_matrix=mtrx_sorted, num_threads=16)
+
+    et_dist = time.time()
+
+
+    sorting_time = et_sorting - st_sorting
+    dist_time = et_dist - st_dist
+
+    print(f"# ### Input matrix shape: {mtrx.shape}")
+    print(f"# ### Time sorting: {sorting_time} s")
+    print(f"# ### Time wasserstein: {dist_time} s")
+
+    # shape: (1000, 15000), Time sorting: 0.20757675170898438 s, Time wasserstein: 2745.7698554992676 s
+    # shape: (10000, 15000), Time sorting: 1.796863317489624 s, Time wasserstein: 30009.90110206604 s
 
 
 
