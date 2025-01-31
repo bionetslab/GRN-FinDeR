@@ -176,17 +176,23 @@ def add_gene_names(biomart, bb, tissue):
 
 
 def create_GTEX_data(config, biomart, tf_list):
-    # Load GTEX sammple attributes
-    # path = op.join(data_dir, 'GTEx_Analysis_v8_Annotations_SampleAttributesDS.txt')
-    tissue_ids = retrieve_GTEX_tissue_sampleids(config['gtex_sample_attributes'], tissue=config['tissue'])
 
-    # load gene expression data
-    data_gex = read_GTEX_transcript_expression(config['gtex_count_data'], tissue_ids, ['Name', 'Description'])
-    data_gex = clean_GTEX_tissue_gene_counts(data_gex, 'Name', 'Description', biomart)
-    threshold = data_gex.shape[1] * 0.1
-    mask = (data_gex == 0).sum(axis=1) > threshold
-    # Filter the DataFrame
-    data_gex = data_gex[~mask]
+    tissue_gex_file = op.join(config['results_dir'], f'{config['tissue'].replace(' ', '_')}.tsv')
+    if not op.isfile(tissue_gex_file):
+        # Load GTEX sammple attributes
+        # path = op.join(data_dir, 'GTEx_Analysis_v8_Annotations_SampleAttributesDS.txt')
+        tissue_ids = retrieve_GTEX_tissue_sampleids(config['gtex_sample_attributes'], tissue=config['tissue'])
+
+        # load gene expression data
+        data_gex = read_GTEX_transcript_expression(config['gtex_count_data'], tissue_ids, ['Name', 'Description'])
+        data_gex = clean_GTEX_tissue_gene_counts(data_gex, 'Name', 'Description', biomart)
+        threshold = data_gex.shape[1] * 0.1
+        mask = (data_gex == 0).sum(axis=1) > threshold
+        # Filter the DataFrame
+        data_gex = data_gex[~mask]
+        data_gex.to_csv(config['tissue_gex_file'], sep = '\t')
+    else:
+        data_gex = pd.read_csv(tissue_gex_file, sep = '\t')
 
     return data_gex
 
