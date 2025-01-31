@@ -126,7 +126,70 @@ def classical_fdr(expression_matrix: pd.DataFrame,
     return grn
 
 
+def classical_fdr_wout_merge(expression_matrix: pd.DataFrame,
+                  tf_names_file: str,
+                  grn: pd.DataFrame,
+                  output_dir: str,
+                  num_permutations=1000) -> pd.DataFrame:
 
+    start_time = time.time()
+
+    # Set up a Dask local cluster for parallel computing
+    local_cluster = LocalCluster(n_workers=60, threads_per_worker=16, memory_limit='20GB')
+    custom_client = Client(local_cluster)
+
+    # Preprocess the expression matrix
+    filtered_matrix_vst = preprocess_data(expression_matrix=expression_matrix)
+
+    print('Computing Classical FDR')
+
+    # Load transcription factor (TF) names
+    tf_names = load_tf_names(tf_names_file)
+
+    # Create dict from original GRN {('TF', 'target'): ('importance', 'counter')}
+    grn_zipped = zip(grn['TF'].to_list(), grn['target'].to_list(), grn['importance'].to_list())
+    grn_dict = {(tf, target): (importance, 0) for tf, target, importance in grn_zipped}
+
+    # Permutation test
+    for i in range(num_permutations):
+        shuffled_matrix = filtered_matrix_vst.apply(np.random.permutation, axis=0)
+        shuffled_grn = grnboost2(expression_data=shuffled_matrix, tf_names=tf_names, client_or_address=custom_client,
+                                 verbose=False, seed=777)
+
+        for tf, target, importance in zip(
+                shuffled_grn['TF'].tolist(), shuffled_grn['target'].tolist(), shuffled_grn['importance'].to_list()):
+            if (tf, target) in grn_dict:
+                grn_dict[(tf, target)][1] += int(importance >= grn_dict[(tf, target)][0])
+
+        del shuffled_matrix, shuffled_grn
+        gc.collect()
+
+    # Calculate p-values
+    grn['p_value'] = grn.apply(
+        lambda row: (grn_dict[(row['TF'], row['target'])][1] + 1) / (num_permutations + 1),
+        axis=1
+    )
+
+    # Apply FDR correction
+    p_values = grn['p_value'].to_numpy()
+    grn['fdr'] = multipletests(p_values, method='fdr_bh')[1]
+
+    # Save the results
+    output_file_path = f"{output_dir}/final_grn_with_pvalues.tsv"
+    grn.to_csv(output_file_path, sep='\t', index=False)
+
+    elapsed_time = time.time() - start_time
+    print(f"Time taken for classical FDR: {elapsed_time} seconds")
+
+    with open(f"{output_dir}/time_log.txt", 'w') as log_file:
+        log_file.write(f'Time elapsed: {elapsed_time:.2f} seconds\n')
+
+    # Close the Dask client and local cluster
+    custom_client.close()
+    local_cluster.close()
+
+    # Return the final GRN with p-values
+    return grn
 
 
 
