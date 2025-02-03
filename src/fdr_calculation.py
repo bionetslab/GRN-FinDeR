@@ -8,9 +8,71 @@ from arboreto.algo import grnboost2
 from arboreto.utils import load_tf_names
 from src.preprocessing import preprocess_data
 from src.clustering import cluster_genes
+import random
+import itertools
 
+def draw_representatives(cluster_to_gene : dict, num_representatives : int = 2):
+    representatives = [random.sample(val, num_representatives) for val in cluster_to_gene.values()]
+    return representatives
 
-
+def approximate_fdr(expression_mat : pd.DataFrame,
+                    grn : pd.DataFrame,
+                    output_dir : str,
+                    gene_to_cluster : dict,
+                    num_permutations : int = 1000):
+    
+    # Invert gene to cluster dictionary.
+    cluster_to_gene = dict()
+    for key, val in gene_to_cluster.items():
+        if val in cluster_to_gene:
+            cluster_to_gene[val].append(key)
+        else:
+            cluster_to_gene[val] = [key]
+    
+    # Create dict from original GRN {('TF', 'target'): ('importance', 'counter')}
+    grn_zipped = zip(grn['TF'].to_list(), grn['target'].to_list(), grn['importance'].to_list())
+    grn_dict = {(tf, target): (importance, 0) for tf, target, importance in grn_zipped}
+    
+    # Init data structure for counting between and withing cluster empirical counts.
+    cluster_cluster_counts = {cluster_edge : 0.0 for cluster_edge in itertools.product(cluster_to_gene.keys())}
+    
+    for i in range(num_permutations):
+        # Sample representatives from each cluster.
+        representatives = draw_representatives(cluster_to_gene, 2)
+        represent_expression = expression_mat[representatives].copy()
+        # Shuffle expression matrix.
+        represent_permuted = represent_expression.sample(frac=1, axis=1)
+        shuffled_grn = grnboost2(expression_data=represent_permuted, 
+                                 tf_names=represent_permuted.columns.to_list())
+        # Compute adjusted count values for each shuffled edge.
+        for tf, target, factor in zip(shuffled_grn['TF'], shuffled_grn['target'], shuffled_grn['importance']):
+            count_value = int(factor >= grn_dict[(tf, target)][0])
+            # Check if edge is between- or intra-cluster edge.
+            if gene_to_cluster[tf] == gene_to_cluster[target]:
+                # Intra-cluster edge can occur twice.
+                count_value /= 2.0
+            else:
+                # Inter-cluster edge can occur four times.
+                count_value /= 4.0
+            # Update corresponding cluster counts.
+            cluster_cluster_counts[(gene_to_cluster[tf], gene_to_cluster[target])] += count_value
+    
+    # Write cluster-cluster Pvalues into original genes.
+    for key in grn_dict.keys():
+        cluster_tuple = (gene_to_cluster[key[0]], gene_to_cluster[key[1]])
+        p_value = (cluster_cluster_counts[cluster_tuple]+1) / (num_permutations+1)
+        grn_dict[key][1] = p_value
+    
+    grn_transposed = {'tf': [], 'target' : [], 'importance' : [], 'pvalue': []}
+    for key, val in grn_dict.items():
+        grn_transposed['tf'].append(key[0])
+        grn_transposed['target'].append(key[1])
+        grn_transposed['importance'].append(val[0])
+        grn_transposed['pvalue'].append(val[1])
+    
+    grn_df = pd.DataFrame.from_dict(grn_transposed)
+    return grn_df
+         
 
 def classical_fdr(expression_matrix: pd.DataFrame,
                   tf_names_file: str, 
