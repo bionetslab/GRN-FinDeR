@@ -6,7 +6,7 @@ from dask.distributed import Client, LocalCluster
 from statsmodels.stats.multitest import multipletests
 from arboreto.algo import grnboost2
 from arboreto.utils import load_tf_names
-from preprocessing import preprocess_data
+from src.preprocessing import preprocess_data
 from src.clustering import cluster_genes
 
 

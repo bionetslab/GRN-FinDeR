@@ -3,7 +3,7 @@ import pandas as pd
 import time
 from sklearn.cluster import AgglomerativeClustering
 from arboreto.utils import load_tf_names
-from distance_matrix import compute_wasserstein_distances_hexa_split 
+from src.distance_matrix import compute_wasserstein_distances_hexa_split
 
 def cluster_genes(expression_matrix: pd.DataFrame,
                   tf_names_file_path: str , 
