@@ -4,6 +4,17 @@ import time
 from sklearn.cluster import AgglomerativeClustering
 from arboreto.utils import load_tf_names
 from src.distance_matrix import compute_wasserstein_distances_hexa_split
+from typing import Union
+
+def cluster_genes_to_dict(distance_matrix : pd.DataFrame, num_clusters : int = 100):
+    # Create clusters.
+    agg_clustering = AgglomerativeClustering(n_clusters=num_clusters, metric='precomputed', linkage='complete')
+    cluster_labels = agg_clustering.fit_predict(distance_matrix.to_numpy())
+    # Map clustering output to dictionary representation.
+    gene_names = distance_matrix.columns.to_list()
+    gene_to_cluster = {name : id for name, id in zip(gene_names, cluster_labels)}
+    return gene_to_cluster
+    
 
 def cluster_genes(expression_matrix: pd.DataFrame,
                   tf_names_file_path: str , 
@@ -83,7 +94,7 @@ def cluster_genes(expression_matrix: pd.DataFrame,
     common_genes = list(set(gene_names) & set(tf_names))
     
     # Filter out the common genes from the distance matrix
-    filtered_gene_names = [gene for gene in gene_names if gene not in common_genes]
+    filtered_gene_names = [gene for gene in gene_names if gene not in common_genes] # Watch out: this also returns TFs, not only genes.
     filtered_distances_df = distance_matrix.loc[filtered_gene_names, filtered_gene_names]
     filtered_distances = filtered_distances_df.values
 

@@ -178,5 +178,5 @@ def pairwise_wasserstein_dists(sorted_matrix, num_threads):
 def compute_wasserstein_scipy_numba(expression_mat : pd.DataFrame, num_threads: int = 1):
     numpy_mat = expression_mat.to_numpy()
     numpy_mat = np.sort(numpy_mat, axis=0)
-    distance_mat = pairwise_wasserstein_dists(numpy_mat, num_threads)
+    distance_mat = pd.DataFrame(pairwise_wasserstein_dists(numpy_mat, num_threads), columns=expression_mat.columns)
     return distance_mat
