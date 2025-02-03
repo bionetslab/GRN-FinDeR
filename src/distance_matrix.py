@@ -7,7 +7,7 @@ from scipy.stats import wasserstein_distance
 from scipy.spatial.distance import pdist, squareform
 import dask.bag as db
 from numba import njit, prange, set_num_threads, types
-import sortednp as snp
+# import sortednp as snp
 
 def compute_wasserstein_distances_hexa_split(expression_matrix: pd.DataFrame, 
                                              batch_size: int = 5000, 
