@@ -1,40 +1,10 @@
 
 
-def time_wiki_wasserstein():
-
-    # Using the definition from Wikipedia: L_1-distance of sorted expression vectors
-    # https://en.wikipedia.org/wiki/Wasserstein_metric#Empirical_distributions
-
-    import time
-    import numpy as np
-    import pandas as pd
-
-    from src.distance_matrix import compute_wasserstein_presort
-
-    expr_matrix = np.random.normal(0, 1, (2000, 15000))
-
-    expr_df = pd.DataFrame(
-        data=expr_matrix,
-        index=[f"gene{i}" for i in range(expr_matrix.shape[0])],
-    )
-
-    print('# ### Starting distance matrix computation ...')
-    st = time.time()
-
-    distance_matrix = compute_wasserstein_presort(expression_matrix=expr_df)
-
-    et = time.time()
-
-    print(f"# ### Time: {et - st}")
-
-    print(f"# ### Distance matrix shape: {distance_matrix.shape}")
-
-
 def compare_wiki_scipy_wasserstein():
 
     import numpy as np
     import pandas as pd
-    from src.distance_matrix import compute_wasserstein_scipy_numba
+    from src.distance_matrix import compute_wasserstein_distance_matrix
     from scipy.stats import wasserstein_distance
 
 
@@ -44,7 +14,7 @@ def compare_wiki_scipy_wasserstein():
 
     expr_matrix = pd.DataFrame(np.vstack((a, b, c)).T.copy())
 
-    wd_wiki = compute_wasserstein_scipy_numba(expr_matrix, 4)
+    wd_wiki = compute_wasserstein_distance_matrix(expr_matrix, 4)
 
     wd_scipy_ab = wasserstein_distance(a, b)
     wd_scipy_ac = wasserstein_distance(a, c)
@@ -95,7 +65,7 @@ def time_wasserstein():
     import time
     import numpy as np
     import pandas as pd
-    from src.distance_matrix import compute_wasserstein_scipy_numba, pairwise_wasserstein_dists
+    from src.distance_matrix import compute_wasserstein_distance_matrix, _pairwise_wasserstein_dists
 
     mtrx = pd.DataFrame(np.random.normal(0, 1, (10000, 15000)))
 
@@ -121,7 +91,7 @@ def time_wasserstein():
 
     st_dist = time.time()
 
-    distance_mat = pairwise_wasserstein_dists(sorted_matrix=mtrx_sorted, num_threads=16)
+    distance_mat = _pairwise_wasserstein_dists(sorted_matrix=mtrx_sorted, num_threads=16)
 
     et_dist = time.time()
 
@@ -137,6 +107,52 @@ def time_wasserstein():
     # shape: (10000, 15000), Time sorting: 1.796863317489624 s, Time wasserstein: 30009.90110206604 s
 
 
+def example_workflow():
+    import os
+    import time
+    import numpy as np
+    import pandas as pd
+    from arboreto.algo import grnboost2
+
+    from src.distance_matrix import compute_wasserstein_distance_matrix
+    from src.clustering import cluster_genes_to_dict
+    from src.fdr_calculation import approximate_fdr
+
+    n_tfs = 10
+    n_genes = 10
+    n_cells = 10
+    tfs = [f'TF{i}' for i in range(n_tfs)]
+    genes = [f'Gene{i}' for i in range(n_genes)]
+    # Construct dummy example
+
+    np.random.seed(42)
+
+    expr_matrix = pd.DataFrame(
+        # np.random.normal(0, 1, (n_cells, n_tfs + n_genes)),
+        np.random.poisson(lam=np.random.gamma(shape=2, scale=1, size=(n_cells, n_tfs + n_genes))),
+        columns=tfs + genes,
+    )
+
+    print(expr_matrix)
+
+    grn = grnboost2(expression_data=expr_matrix, tf_names=tfs, verbose=True, seed=777)
+
+    print(grn)
+
+    dist_mat = compute_wasserstein_distance_matrix(expr_matrix, 4)
+
+    print(dist_mat)
+
+    gene_to_clust = cluster_genes_to_dict(dist_mat, num_clusters=3)
+
+    print(gene_to_clust)
+
+    grn_w_pvals = approximate_fdr(
+        expression_mat=expr_matrix, grn=grn, gene_to_cluster=gene_to_clust, num_permutations=2)
+
+    print(grn_w_pvals)
+
+
 
 if __name__ == '__main__':
 
@@ -146,6 +162,11 @@ if __name__ == '__main__':
 
     # numpy_vs_numba_sorting()
 
-    time_wasserstein()
+    # time_wasserstein()
+
+    # time_classical_fdr()
+
+    example_workflow()
+
 
     print("done")
