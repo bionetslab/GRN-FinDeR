@@ -90,59 +90,25 @@ def read_tf_list(tf_path, biomart):
     return tf_list
 
 
-def compute_and_save_network(data, tf_list, client, file, use_tf=False):
+def compute_and_save_network(data, tf_list, client, file, use_tf=False, n_permutations = 1000):
     print('Computing network')
     # compute the GRN
     if not use_tf:
         network = grnboost2(expression_data=data,
-                            client_or_address=client)
+                            client_or_address=client,
+                            n_permutations = n_permutations)
     else:
         network = grnboost2(expression_data=data,
                             tf_names=tf_list,
-                            client_or_address=client)
+                            client_or_address=client,
+                            n_permutations = n_permutations)
 
     # write the GRN to file
     network.to_csv(file, sep='\t', index=False, header=False)
     return network
 
 
-def save_randomization_counts(count, iteration, filename, yaml_file, tissue):
-    l = []
-    for k in count:
-        l.append([k[0], k[1], count[k]['counter']])
-    r = pd.DataFrame(l)
-    r.columns = ['source', 'target', 'count']
-    r.to_csv(filename, sep='\t', index=None)
 
-    data = {'tissue': tissue, 'iteration': iteration}
-    with open(yaml_file, 'w') as f:
-        json.dump(data, f)
-    return r
-
-
-def compute_background_model(data, tf_list, client, grn, output_file, yaml_file, tissue, samples, tf_column='TF',
-                             target_column='target', importance_column='importance', use_tf=True):
-    print('Computing background model')
-    count = {}
-    for i, row in grn.iterrows():
-        count[(row[tf_column], row[target_column])] = {'score': row[importance_column], 'counter': 0}
-    np.random.seed(22)
-    for i in range(0, samples):
-        data_permuted = data.sample(frac=1, axis=1)
-        if not use_tf:
-            network = grnboost2(expression_data=data_permuted,
-                                client_or_address=client)
-        else:
-            network = grnboost2(expression_data=data_permuted,
-                                tf_names=tf_list,
-                                client_or_address=client)
-        for row in network.itertuples():
-            if (row[1], row[2]) in count and (row[3] >= count[(row[1], row[2])]['score']):
-                count[(row[1], row[2])]['counter'] += 1
-
-    rcount = save_randomization_counts(count, i, output_file, yaml_file, tissue)
-
-    return rcount
 
 
 def read_result(outfile, outfile_perm, resultfile_fdr):
@@ -216,10 +182,7 @@ def inference_pipeline_GTEX(config):
     print(f'Full data shape:{data_gex.head()}')
 
 
-    #cluster = SLURMCluster(queue='work', account="iwbn", cores=30, memory="200 GB", walltime='24:00:00')
-    #cluster = SLURMRunner()
-    #cluster.scale(jobs=1)  # ask for 10 jobs
-    cluster = LocalCluster(dashboard_address = 'localhost:87878')
+    cluster = LocalCluster()
     client = Client(cluster)
     print(client)
     
@@ -233,60 +196,12 @@ def inference_pipeline_GTEX(config):
     os.makedirs(results_dir_permutation, exist_ok=True)
 
     file_gene = op.join(results_dir_grn, f"{config['tissue']}_gene_tf.network.tsv")
-    grn = compute_and_save_network(data_gex,
+    network = compute_and_save_network(data_gex,
                                     tf_list['Gene stable ID'].unique().tolist(),
                                     client,
     
                                     file_gene,
                                     use_tf=True)
-
-    ## RUN FDR control
-    if config['fdr_samples'] > 0:
-        file_gene_fdr = op.join(results_dir_permutation, f"{config['tissue']}_gene_tf.count.tsv", )
-        yaml_file_gene = op.join(results_dir_permutation, f"{config['tissue']}_gene_metadata.json")
-        compute_background_model(data_gex,
-                                    tf_list['Gene stable ID'].unique().tolist(),
-                                    client,
-                                    grn,
-                                    file_gene_fdr,
-                                    yaml_file_gene,
-                                    config['tissue'],
-                                    config['fdr_samples'],
-                                    use_tf=True
-                                    )
-
-        resultfile_frd_gene = op.join(results_dir, f"{config['tissue']}_gene_tf.fdr_network.tsv")
-        read_result(file_gene, file_gene_fdr, resultfile_frd_gene)
-
-    if config['run_full_network']:
-        ## Infer Gene based networks with all genes
-        file_gene_all = f"{config['tissue']}_gene_all.network.tsv"
-        compute_and_save_network(data_gex,
-                                        tf_list['Gene stable ID'].unique().tolist(),
-                                        client,
-                                        file_gene_all,
-                                        use_tf=False)
-
-        print(f'Gene data shape:{data_gex.shape}')
-
-        if config['fdr_samples'] > 0:
-            file_gene_fdr_all = op.join(results_dir_permutation, f"{config['tissue']}_gene_all.count.tsv", )
-            yaml_file_gene = op.join(results_dir_permutation, f"{config['tissue']}_gene_metadata.json")
-            compute_background_model(data_gex,
-                                        tf_list['Gene stable ID'].unique().tolist(),
-                                        client,
-                                        grn,
-                                        file_gene_fdr_all,
-                                        yaml_file_gene,
-                                        config['tissue'],
-                                        config['fdr_samples'],
-                                        use_tf=False
-                                        )
-
-            resultfile_frd_gene = op.join(results_dir, f"{config['tissue']}_gene_all.fdr_network.tsv")
-            read_result(file_gene, file_gene_fdr, resultfile_frd_gene)
-
-
 
 
 
