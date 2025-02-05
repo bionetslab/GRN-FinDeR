@@ -143,7 +143,7 @@ def add_gene_names(biomart, bb, tissue):
 
 def create_GTEX_data(config, biomart, tf_list):
 
-    tissue_gex_file = op.join(config['results_dir'], f'{config['tissue'].replace(' ', '_')}.tsv')
+    tissue_gex_file = op.join(config['results_dir'], f"{config['tissue'].replace(' ', '_')}.tsv")
     if not op.isfile(tissue_gex_file):
         # Load GTEX sammple attributes
         # path = op.join(data_dir, 'GTEx_Analysis_v8_Annotations_SampleAttributesDS.txt')
@@ -156,7 +156,13 @@ def create_GTEX_data(config, biomart, tf_list):
         mask = (data_gex == 0).sum(axis=1) > threshold
         # Filter the DataFrame
         data_gex = data_gex[~mask]
-        data_gex.to_csv(config['tissue_gex_file'], sep = '\t')
+            # genes need to be columns
+        data_gex = data_gex.T
+
+        if config['standardize_data']:
+            data_gex[data_gex.columns] = scale(data_gex.values)
+    
+        data_gex.to_csv(tissue_gex_file, sep = '\t')
     else:
         data_gex = pd.read_csv(tissue_gex_file, sep = '\t')
 
@@ -173,11 +179,6 @@ def inference_pipeline_GTEX(config):
 
     data_gex = create_GTEX_data(config, biomart, tf_list)
  
-    # genes need to be columns
-    data_gex = data_gex.T
-
-    if config['standardize_data']:
-        data_gex[data_gex.columns] = scale(data_gex.values)
 
     print(f'Full data shape:{data_gex.head()}')
 
