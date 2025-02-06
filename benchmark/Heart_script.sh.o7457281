@@ -1,0 +1,12 @@
+### Starting TaskPrologue of job 7457281 on w2325 at Thu Feb  6 13:37:17 CET 2025
+#   SLURM_JOB_NODELIST=w2325
+#   SLURM_JOB_NUM_NODES=1
+#   SLURM_NTASKS=1
+#   SLURM_NPROCS=1
+#   SLURM_TASKS_PER_NODE=1
+#   SLURM_JOB_CPUS_PER_NODE=32
+#   SLURM_EXPORT_ENV=NONE
+Running on cores 0-31 with govenor powersave
+### Finished TaskPrologue
+32
+32

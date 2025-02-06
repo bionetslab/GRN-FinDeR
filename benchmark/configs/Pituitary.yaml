@@ -1,0 +1,12 @@
+biomart: /home/woody/iwbn/iwbn006h/GRN-FinDeR/data/biomart.txt
+fdr_samples: 1000
+gtex_count_data: /home/woody/iwbn/iwbn006h/alternet/data/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.gct
+gtex_sample_attributes: /home/woody/iwbn/iwbn006h/alternet/data/GTEx_Analysis_v8_Annotations_SampleAttributesDS.txt
+gtex_transcript_data: /home/woody/iwbn/iwbn006h/alternet/data/GTEx_Analysis_2017-06-05_v8_RSEMv1.3.0_transcript_tpm.gct
+parent_directory: /home/woody/iwbn/iwbn006h/
+results_dir: /home/woody/iwbn/iwbn006h/grn_finder_results
+run_full_network: false
+standardize_data: true
+temp_dir: $TMPDIR
+tf_list: /home/woody/iwbn/iwbn006h/alternet/data/allTFs_hg38.txt
+tissue: Pituitary
