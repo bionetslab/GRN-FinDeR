@@ -52,7 +52,8 @@ def save_jobscript(config, jobscript_path):
                 module load python
                 conda activate grn-finder 
                 cd $WORK 
-                srun python GRN-FinDeR/benchmark/src/generate_groundtruth.py -f GRN-FinDeR/benchmark/configs/{t}.yaml  
+                srun python GRN-FinDeR/benchmark/src/generate_groundtruth.py -f GRN-FinDeR/benchmark/configs/{t}.yaml
+                cp $TEMPDIR/{t} {config['results_dir']}/{t}
                 conda deactivate
                 """
 

@@ -48,8 +48,7 @@ def inference_pipeline_GTEX(config):
 
     ## RUN INFERENCE for transcript based network
     results_dir = op.join(config['results_dir'], config['tissue'])
-    results_dir_grn = op.join(results_dir, 'grn')
-    os.makedirs(results_dir_grn, exist_ok=True)
+    
 
     tissue_output_file = op.join(results_dir, f"{config['tissue'].replace(' ', '_')}.tsv")
     data_gex = create_GTEX_data(tissue=config['tissue'], 
@@ -65,13 +64,23 @@ def inference_pipeline_GTEX(config):
 
 
     print('Running inferrence pipeline')
+    if op.isdir(config['temp_dir']):
+        p_grn_temp_dir = op.join(config['temp_dir'], config['tissue'])
+        os.makedirs(p_grn_temp_dir, exist_ok=True)
+        print(f"Storing intermediate results in {op.join(config['temp_dir'], config['tissue'])}")
+        grn_temp_dir = p_grn_temp_dir
+    else:
+        results_dir_grn = op.join(results_dir, 'grn')
+        os.makedirs(results_dir_grn, exist_ok=True)
+        grn_temp_dir = results_dir_grn
+
     file_gene = op.join(results_dir, f"{config['tissue']}_gene_tf.network.tsv")
     network = compute_and_save_network(data_gex,
                                     tf_list['Gene stable ID'].unique().tolist(),
                                     client,
                                     file_gene,
                                     use_tf=True, 
-                                    output_dir = results_dir_grn,
+                                    output_dir = grn_temp_dir,
                                     n_permutations=config['fdr_samples'])
 
 
@@ -80,6 +89,7 @@ def inference_pipeline_GTEX(config):
 if __name__ == "__main__":
     import yaml
     import argparse
+    import os
 
     parser = argparse.ArgumentParser(description="Process a file from the command line.")
     
@@ -91,6 +101,11 @@ if __name__ == "__main__":
     
     with open(args.f, 'r') as f:
         config = yaml.safe_load(f)
+    
+    try:
+        config = {key: os.path.expandvars(value) if isinstance(value, str) else value for key, value in config.items()}
+    except:
+        raise ValueError('Issue parsing yaml file')
 
     emissions_file = op.join(config['results_dir'], config['tissue'], 'emissions.csv')
     
