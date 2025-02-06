@@ -90,18 +90,20 @@ def read_tf_list(tf_path, biomart):
     return tf_list
 
 
-def compute_and_save_network(data, tf_list, client, file, use_tf=False, n_permutations = 1000):
+def compute_and_save_network(data, tf_list, client, file, use_tf=False, n_permutations = 1000, output_dir = '/tmp/grnboost2'):
     print('Computing network')
     # compute the GRN
     if not use_tf:
         network = grnboost2(expression_data=data,
                             client_or_address=client,
-                            n_permutations = n_permutations)
+                            n_permutations = n_permutations,
+                            output_directory = output_dir)
     else:
         network = grnboost2(expression_data=data,
                             tf_names=tf_list,
                             client_or_address=client,
-                            n_permutations = n_permutations)
+                            n_permutations = n_permutations,
+                            output_directory = output_dir)
 
     # write the GRN to file
     network.to_csv(file, sep='\t', index=False, header=False)
@@ -193,16 +195,15 @@ def inference_pipeline_GTEX(config):
     results_dir = op.join(config['results_dir'], config['tissue'])
     results_dir_grn = op.join(results_dir, 'grn')
     os.makedirs(results_dir_grn, exist_ok=True)
-    results_dir_permutation = op.join(results_dir, 'permuted')
-    os.makedirs(results_dir_permutation, exist_ok=True)
 
-    file_gene = op.join(results_dir_grn, f"{config['tissue']}_gene_tf.network.tsv")
+    file_gene = op.join(results_dir, f"{config['tissue']}_gene_tf.network.tsv")
     network = compute_and_save_network(data_gex,
                                     tf_list['Gene stable ID'].unique().tolist(),
                                     client,
     
                                     file_gene,
-                                    use_tf=True)
+                                    use_tf=True, 
+                                    output_dir = results_dir_grn)
 
 
 
