@@ -144,7 +144,6 @@ def example_workflow():
     print(dist_mat)
 
     gene_to_clust = cluster_genes_to_dict(dist_mat, num_clusters=3)
-
     print(gene_to_clust)
 
     grn_w_pvals = approximate_fdr(
@@ -153,20 +152,90 @@ def example_workflow():
     print(grn_w_pvals)
 
 
+def run_approximate_fdr_control(expression_file_path : str, tf_file_path : str, grn_file_path : str,
+                                num_permutations : int, num_clusters : int, num_threads : int,
+                                output_path : str):
+    """Computes approximate FDR control for GRNs based on empirical P-value computation.
+
+    Args:
+        expression_file_path (str): Path to input file containig preprocessed expression matrix. Should be
+            tab-separated csv file, with gene symbols as columns.
+        grn (str): Path to dataframe containing edges of to-be-corrected GRN.
+        tf_file_path (str): Path to txt file containig newline-separated list of TFs as gene symbols.
+        num_permutations (int): Number of permutations to run for empirical P-value computation.
+        num_clusters (int): Number of clusters to cluster genes into and draw representatives from.
+        num_threads (int): How many threads to use for numba-based parallelized computation of 
+            Wasserstein distance matrix.
+    """
+    import os
+    import time
+    import numpy as np
+    import pandas as pd
+    from arboreto.algo import grnboost2
+    import pickle
+
+    from src.distance_matrix import compute_wasserstein_distance_matrix
+    from src.clustering import cluster_genes_to_dict
+    from src.fdr_calculation import approximate_fdr
+    
+    # Read preprocessed expression matrix and TF list.
+    exp_matrix = pd.read_csv(expression_file_path, sep='\t', index_col=0)
+    with open(tf_file_path) as tf:
+        tfs = [line.strip() for line in tf]
+        
+    # Make sure that all TFs are actually contained in expression matrix [check if this is necessary?].
+    tfs = list(set(tfs).intersection(list(exp_matrix.columns)))
+        
+    # Read GRN dataframe.
+    # grn = pd.read_csv(grn_file_path, sep='\t')
+    grn = grnboost2(expression_data=exp_matrix, tf_names=tfs, verbose=True, seed=777)
+    grn.to_csv(output_path + 'input_grn.csv')
+    
+    # Compute Wasserstein distance matrix.
+    print("Computing Wasserstein distance matrix...")
+    dist_start = time.time()
+    dist_mat = compute_wasserstein_distance_matrix(expr_matrix, num_threads)
+    dist_end = time.time()
+    dist_mat.to_csv(output_path + "distance_matrix.csv", sep='\t')
+    print(f'Wasserstein distance matrix computation took {dist_end-dist_start} seconds.')
+    
+    # Cluster genes based on Wasserstein distance.
+    print("Clustering genes...")
+    clust_start = time.time()
+    gene_to_cluster = cluster_genes_to_dict(dist_mat, num_clusters=num_clusters)
+    clust_end = time.time()
+    with open(output_path + "clustering.pkl", 'wb') as f:
+        pickle.dump(gene_to_clust, f)
+    print(f'Gene clustering took {clust_end-clust_start} seconds.')
+    
+    # Run approximate empirical P-value computation.
+    print("Running approximate FDR control...")
+    fdr_start = time.time()
+    grn_pvals = approximate_fdr(expression_mat=exp_matrix, grn=grn, gene_to_cluster=gene_to_cluster,
+                                num_permutations=num_permutations)
+    fdr_end = time.time()
+    grn_pvals.to_csv(output_path + "grn_pvalues.csv", sep='\t')
+    print(f'Approximate FDR control took {fdr_end-fdr_start} seconds.')
+    
+    logger = pd.DataFrame()
+    logger['distance_mat'] = [dist_end-dist_start]
+    logger['clustering'] = [clust_end-clust_start]
+    logger['fdr'] = [fdr_end-fdr_start]
+    logger.to_csv(output_path + 'logger.csv')
+    
 
 if __name__ == '__main__':
 
-    # time_wiki_wasserstein()
-
-    # compare_wiki_scipy_wasserstein()
-
-    # numpy_vs_numba_sorting()
-
-    # time_wasserstein()
-
-    # time_classical_fdr()
-
-    example_workflow()
-
-
+    # Adjust paths (orig. GTEX data path: /data/bionets/datasets/gtex/<tissue>)
+    # TF file URL: https://resources.aertslab.org/cistarget/tf_lists/
+    expression_file_path = "/data/bionets/xa39zypy/GTEX/GTEX_Prostate_filtered_standardized.tsv"
+    tf_file_path = "/data/bionets/xa39zypy/GTEX/allTFs_hg38.txt"
+    grn_file_path = ""
+    num_permutations = 100
+    num_clusters = 100
+    num_threads = 32
+    output_path = "/data/bionets/xa39zypy/GRN-FinDeR/data/Prostate/"
+    run_approximate_fdr_control(expression_file_path, tf_file_path, grn_file_path, 
+                                num_permutations, num_clusters, num_threads, output_path)
+    
     print("done")
