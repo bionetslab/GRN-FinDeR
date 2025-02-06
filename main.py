@@ -194,7 +194,7 @@ def run_approximate_fdr_control(expression_file_path : str, tf_file_path : str, 
     # Compute Wasserstein distance matrix.
     print("Computing Wasserstein distance matrix...")
     dist_start = time.time()
-    dist_mat = compute_wasserstein_distance_matrix(expr_matrix, num_threads)
+    dist_mat = compute_wasserstein_distance_matrix(exp_matrix, num_threads)
     dist_end = time.time()
     dist_mat.to_csv(output_path + "distance_matrix.csv", sep='\t')
     print(f'Wasserstein distance matrix computation took {dist_end-dist_start} seconds.')
@@ -205,7 +205,7 @@ def run_approximate_fdr_control(expression_file_path : str, tf_file_path : str, 
     gene_to_cluster = cluster_genes_to_dict(dist_mat, num_clusters=num_clusters)
     clust_end = time.time()
     with open(output_path + "clustering.pkl", 'wb') as f:
-        pickle.dump(gene_to_clust, f)
+        pickle.dump(gene_to_cluster, f)
     print(f'Gene clustering took {clust_end-clust_start} seconds.')
     
     # Run approximate empirical P-value computation.
