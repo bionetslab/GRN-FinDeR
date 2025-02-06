@@ -1,9 +1,48 @@
-# my_grn_package/preprocessing.py
-
 import pandas as pd
 import numpy as np
 import scanpy as sc
 from pybiomart import Dataset
+from sklearn.preprocessing import StandardScaler
+
+def preprocess_gtex(input_file_path : str, output_file_path : str):
+    """
+        Load, preprocess and save GTEX gene expression matrices for given tissue.
+            Parameters:
+            ----------
+            input_file_path (str): Path to file containing raw count expression matrices.
+            output_file_path (str): Name and path of output file.
+    """
+    # Open file and transform into gene-column based format.
+    exp_df = pd.read_csv(input_file_path, sep='\t', index_col='Description')
+    exp_df.drop(columns=['Name'], inplace=True)
+    exp_df = exp_df.T
+    print(exp_df)
+    
+    # Fetch protein-coding genes from BioMart.
+    dataset = Dataset(name='hsapiens_gene_ensembl', host='http://www.ensembl.org')
+    genes = dataset.query(attributes=['hgnc_symbol', 'gene_biotype'])
+    protein_coding_genes = genes[genes['Gene type'] == 'protein_coding']['HGNC symbol']
+    print(protein_coding_genes)
+    
+    # Subset expression matrix only to protein coding genes.
+    intersection_genes = set(exp_df.columns).intersection(protein_coding_genes)
+    filtered_matrix = exp_df[list(intersection_genes)]
+    filtered_matrix = filtered_matrix.astype(np.float32)
+    print(filtered_matrix.shape)
+    
+    # Remove genes with low expression.
+    RATIO_THRESHOLD = 0.1 * filtered_matrix.shape[0]
+    filtered_matrix = filtered_matrix.loc[:, (filtered_matrix != 0).sum(axis=0) > RATIO_THRESHOLD]
+    print(filtered_matrix.shape)
+    
+    # Scale gene columns to zero-mean and unit variance.
+    scaler = StandardScaler()
+    scaled_matrix = pd.DataFrame(scaler.fit_transform(filtered_matrix), columns=filtered_matrix.columns)
+    print(scaled_matrix)
+    
+    # Save preprocessed expression matrix.
+    scaled_matrix.to_csv(output_file_path, sep='\t')    
+    
 
 def preprocess_data(expression_matrix: pd.DataFrame) -> pd.DataFrame:
     """
@@ -72,3 +111,8 @@ def preprocess_data(expression_matrix: pd.DataFrame) -> pd.DataFrame:
     filtered_matrix_vst = pd.DataFrame(adata_filtered.X, index=filtered_matrix.index, columns=filtered_matrix.columns)
 
     return filtered_matrix_vst
+
+if __name__ == '__main__':
+    input_file_name = "/data/bionets/datasets/gtex/Colon/GTEX_Colon_counts.tsv"
+    output_file_name = "/data/bionets/xa39zypy/GTEX/GTEX_Colon_filtered_standardized.tsv"
+    preprocess_gtex(input_file_name, output_file_name)
