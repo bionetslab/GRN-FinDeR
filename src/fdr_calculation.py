@@ -6,6 +6,8 @@ from dask.distributed import Client, LocalCluster
 from statsmodels.stats.multitest import multipletests
 from arboreto.algo import grnboost2
 from arboreto.utils import load_tf_names
+
+from src.clustering import cluster_genes_to_dict
 from src.preprocessing import preprocess_data
 import random
 import itertools
@@ -23,7 +25,10 @@ def approximate_fdr(expression_mat : pd.DataFrame,
             cluster_to_gene[val].append(key)
         else:
             cluster_to_gene[val] = [key]
-    
+
+    # Compute set of singleton genes, i.e. genes that are in one-element-cluster.
+    singleton_genes = {genes[0] for _, genes in cluster_to_gene.items() if len(genes)==1}
+
     # Create dict from original GRN {('TF', 'target'): ('importance', 'counter')}
     grn_zipped = zip(grn['TF'].to_list(), grn['target'].to_list(), grn['importance'].to_list())
     grn_dict = {(tf, target): (importance, 0.0) for tf, target, importance in grn_zipped}
@@ -44,12 +49,20 @@ def approximate_fdr(expression_mat : pd.DataFrame,
             if (tf, target) in grn_dict:
                 count_value = int(factor >= grn_dict[(tf, target)][0])
 
-                # Check if edge is between- or intra-cluster edge.
-                if gene_to_cluster[tf] == gene_to_cluster[target]:
-                    # Intra-cluster edge can occur twice.
+                tf_is_singleton = (tf in singleton_genes)
+                target_is_singleton = (target in singleton_genes)
+
+                if tf_is_singleton and target_is_singleton:
+                    # Two singleton clusters, keep count value as is.
+                    count_value = 1.0 * count_value
+                elif tf_is_singleton or target_is_singleton:
+                    # One singleton cluster, two possible edges.
+                    count_value /= 2.0
+                elif gene_to_cluster[tf] == gene_to_cluster[target]:
+                    # No singleton clusters; intra-cluster edge can occur twice.
                     count_value /= 2.0
                 else:
-                    # Inter-cluster edge can occur four times.
+                    # No singleton clusters; inter-cluster edge can occur four times.
                     count_value /= 4.0
                 # Update corresponding cluster counts.
                 cluster_cluster_counts[(gene_to_cluster[tf], gene_to_cluster[target])] += count_value
@@ -72,7 +85,7 @@ def approximate_fdr(expression_mat : pd.DataFrame,
 
 
 def _draw_representatives(cluster_to_gene : dict, num_representatives : int = 2):
-    representatives = [random.sample(val, num_representatives) for val in cluster_to_gene.values()]
+    representatives = [random.sample(val, min(len(val), num_representatives)) for val in cluster_to_gene.values()]
     representatives = list(itertools.chain.from_iterable(representatives))
     return representatives
 
