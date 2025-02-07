@@ -104,3 +104,55 @@ def create_GTEX_data(tissue, gtex_count_file, gtex_sample_attribute_file, proces
         data_gex = pd.read_csv(processed_output_file, sep = '\t')
 
     return data_gex
+
+
+def preprocessing_pipeline_GTEX(config):
+
+    biomart = pd.read_csv(config['biomart'], sep='\t')
+    tf_list = read_tf_list(config['tf_list'], biomart)
+
+
+    ## RUN INFERENCE for transcript based network
+    results_dir = op.join(config['results_dir'], config['tissue'])
+    
+
+    tissue_output_file = op.join(results_dir, f"{config['tissue'].replace(' ', '_')}.tsv")
+    data_gex = create_GTEX_data(tissue=config['tissue'], 
+                                gtex_count_file=config['gtex_count_data'],
+                                gtex_sample_attribute_file=config['gtex_sample_attributes'], 
+                                processed_output_file = tissue_output_file, 
+                                biomart=biomart, 
+                                standardize_data= config['standardize_data'])
+ 
+    target_gene_names = set(data_gex.column.tolist()).intersection(set(tf_list))
+    target_gene_output_file = op.join(results_dir, f"{config['tissue'].replace(' ', '_')}_target_genes.tsv")
+    pd.DataFrame({'target_gene': list(target_gene_names)}).to_csv(target_gene_output_file)
+
+
+
+if __name__ == "__main__":
+    import yaml
+    import argparse
+    import os
+
+    parser = argparse.ArgumentParser(description="Process a file from the command line.")
+    
+    # Add the file argument
+    parser.add_argument('-f', type=str, help='The file to process')
+    
+    # Parse the arguments
+    args = parser.parse_args()
+    
+    with open(args.f, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    try:
+        config = {key: os.path.expandvars(value) if isinstance(value, str) else value for key, value in config.items()}
+    except:
+        raise ValueError('Issue parsing yaml file')
+
+    emissions_file = op.join(config['results_dir'], config['tissue'], 'emissions.csv')
+    
+    with OfflineEmissionsTracker(country_iso_code="DEU", output_file = emissions_file, log_level = 'error') as tracker:
+        preprocessing_pipeline_GTEX(config)
+
