@@ -1,5 +1,5 @@
 biomart: /home/woody/iwbn/iwbn006h/GRN-FinDeR/data/biomart.txt
-fdr_samples: 1000
+fdr_samples: 2
 gtex_count_data: /home/woody/iwbn/iwbn006h/alternet/data/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.gct
 gtex_sample_attributes: /home/woody/iwbn/iwbn006h/alternet/data/GTEx_Analysis_v8_Annotations_SampleAttributesDS.txt
 gtex_transcript_data: /home/woody/iwbn/iwbn006h/alternet/data/GTEx_Analysis_2017-06-05_v8_RSEMv1.3.0_transcript_tpm.gct

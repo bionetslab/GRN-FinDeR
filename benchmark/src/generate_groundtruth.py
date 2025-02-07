@@ -47,8 +47,11 @@ def inference_pipeline_GTEX(config):
 
 
     ## RUN INFERENCE for transcript based network
-    results_dir = op.join(config['results_dir'], config['tissue'])
-    
+    tissue_string = config['tissue'].replace(' ', '_')
+    results_dir = op.join(config['results_dir'], tissue_string)
+    results_dir_grn = op.join(results_dir, 'grn')
+    os.makedirs(results_dir_grn, exist_ok=True)
+
 
     tissue_output_file = op.join(results_dir, f"{config['tissue'].replace(' ', '_')}.tsv")
     data_gex = create_GTEX_data(tissue=config['tissue'], 
@@ -65,16 +68,13 @@ def inference_pipeline_GTEX(config):
 
     print('Running inferrence pipeline')
     if op.isdir(config['temp_dir']):
-        p_grn_temp_dir = op.join(config['temp_dir'], config['tissue'])
-        os.makedirs(p_grn_temp_dir, exist_ok=True)
-        print(f"Storing intermediate results in {op.join(config['temp_dir'], config['tissue'])}")
-        grn_temp_dir = p_grn_temp_dir
+        grn_temp_dir = op.join(config['temp_dir'], tissue_string)
+        os.makedirs(grn_temp_dir, exist_ok=True)
+        print(f"Storing intermediate results in {op.join(config['temp_dir'], tissue_string)}")
     else:
-        results_dir_grn = op.join(results_dir, 'grn')
-        os.makedirs(results_dir_grn, exist_ok=True)
         grn_temp_dir = results_dir_grn
 
-    file_gene = op.join(results_dir, f"{config['tissue']}_gene_tf.network.tsv")
+    file_gene = op.join(results_dir, f"{tissue_string}_gene_tf.network.tsv")
     network = compute_and_save_network(data_gex,
                                     tf_list['Gene stable ID'].unique().tolist(),
                                     client,
@@ -104,11 +104,12 @@ if __name__ == "__main__":
     
     try:
         config = {key: os.path.expandvars(value) if isinstance(value, str) else value for key, value in config.items()}
+        print(f"Temp dir: {config['temp_dir']}")
     except:
         raise ValueError('Issue parsing yaml file')
 
-    emissions_file = op.join(config['results_dir'], config['tissue'], 'emissions.csv')
+    emissions_file = op.join(config['results_dir'], config['tissue'].replace(' ', '_'), 'emissions.csv')
     
-    with OfflineEmissionsTracker(country_iso_code="DEU", output_file = emissions_file, log_level = 'error') as tracker:
+    with OfflineEmissionsTracker(country_iso_code="DEU", output_file = emissions_file, log_level = 'error', measure_power_secs = 600) as tracker:
         inference_pipeline_GTEX(config)
 
