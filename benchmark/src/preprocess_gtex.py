@@ -130,6 +130,7 @@ def preprocessing_pipeline_GTEX(config):
     target_gene_output_file = op.join(results_dir, f"{config['tissue'].replace(' ', '_')}_target_genes.tsv")
     pd.DataFrame({'target_gene': list(target_gene_names)}).to_csv(target_gene_output_file)
 
+    return tissue_output_file, target_gene_output_file
 
 
 if __name__ == "__main__":
@@ -156,5 +157,16 @@ if __name__ == "__main__":
     emissions_file = op.join(config['results_dir'], config['tissue'], 'emissions.csv')
     
     with OfflineEmissionsTracker(country_iso_code="DEU", output_file = emissions_file, log_level = 'error') as tracker:
-        preprocessing_pipeline_GTEX(config)
+        tissue_output_file, gene_name_output_file = preprocessing_pipeline_GTEX(config)
+
+
+    # Update configuration file
+    config['preprocessed_data_file'] = tissue_output_file
+    config['target_gene_name_file'] = gene_name_output_file
+
+    with open(filename, 'w') as yaml_file:
+        yaml.dump(config, yaml_file, default_flow_style=False)
+
+
+    
 

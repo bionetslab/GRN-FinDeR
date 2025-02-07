@@ -17,8 +17,10 @@ def save_new_configs(path, config):
         config['tissue'] = t
         name = t.replace(' ', '_')
         filename = op.join(path, f'{name}.yaml')
+        
         with open(filename, 'w') as yaml_file:
             yaml.dump(config, yaml_file, default_flow_style=False)
+
 
 
 def save_jobscript(config, jobscript_path):
@@ -99,6 +101,38 @@ conda deactivate
         with open(jobscript_file, 'w') as handle:
             handle.write(script_content)
 
+def chunk_list(lst, chunk_size=100):
+    return [lst[i:i+chunk_size] for i in range(0, len(lst), chunk_size)]
+
+def update_and_replicate_config_files(config_dir):
+    
+    config_files = os.listdir(config_dir)
+
+    for f in config_files:
+        with open(args.f, 'r') as f:
+            config = yaml.safe_load(f)
+
+
+        list_of_genes = pd.read_csv(config['target_gene_name_file'])
+        list_of_genes = list(list_of_genes['target_gene'])
+        list_of_genes = chunk_list(list_of_genes)
+
+        counter = 0
+        for l in list_of_genes:
+            config['selected_genes'] = l
+
+            name = cpnfig['tissue'].replace(' ', '_')
+            filename = op.join(config_dir, f'{name}_{counter}.yaml')
+            with open(filename, 'w') as yaml_file:
+                yaml.dump(config, yaml_file, default_flow_style=False)
+            
+            counter += 1
+
+
+
+
+        
+
 
 if __name__ == '__main__':
     import argparse
@@ -109,6 +143,7 @@ if __name__ == '__main__':
     parser.add_argument('-o', type=str, help='The output_directory')
     parser.add_argument('-j', type=str, help='Batch submissions scripts', default=None)
     parser.add_argument('-p', type=str, help='Batch preproccessing scripts', default=None)
+    parser.add_argument('-u', type=str, help='Update config files', default=None)
 
     # Parse the arguments
     args = parser.parse_args()
@@ -122,6 +157,8 @@ if __name__ == '__main__':
     if args.p is not None:
         os.makedirs(args.p, exist_ok=True)
         save_preprocessing_script(config, args.p)
+    if args.u is not None and args.o is not None:
+        update_and_replicate_config_files(args.o)
 
 
 
