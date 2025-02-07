@@ -80,7 +80,7 @@ def save_preprocessing_script(config, jobscript_path):
         script_content = f"""#!/bin/bash -l
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=2
 #SBATCH --time=00:15:00
 #SBATCH --export=NONE
 unset SLURM_EXPORT_ENV
