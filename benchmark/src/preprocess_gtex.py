@@ -81,7 +81,7 @@ def read_tf_list(tf_path, biomart):
 
 def create_GTEX_data(tissue, gtex_count_file, gtex_sample_attribute_file, processed_output_file, biomart, standardize_data =True):
 
-    if not op.isfile(tissue_gex_file):
+    if not op.isfile(processed_output_file):
         # Load GTEX sammple attributes
         # path = op.join(data_dir, 'GTEx_Analysis_v8_Annotations_SampleAttributesDS.txt')
         tissue_ids = retrieve_GTEX_tissue_sampleids(gtex_sample_attribute_file, tissue=tissue)
@@ -98,10 +98,12 @@ def create_GTEX_data(tissue, gtex_count_file, gtex_sample_attribute_file, proces
 
         if standardize_data:
             data_gex[data_gex.columns] = scale(data_gex.values)
-    
+        
+        print(f"Gene expression data shape {data_gex.shape}")
+        print(data_gex.columns)
         data_gex.to_csv(processed_output_file, sep = '\t')
     else:
-        data_gex = pd.read_csv(processed_output_file, sep = '\t')
+        data_gex = pd.read_csv(processed_output_file, sep = '\t', header = 0, index_col=0)
 
     return data_gex
 
