@@ -1,7 +1,7 @@
 import yaml
 import os.path as op
 import os
-
+import pandas as pd
 
 def read_template(path):
     with open(path, 'r') as f:
@@ -104,52 +104,46 @@ conda deactivate
 def chunk_list(lst, chunk_size=100):
     return [lst[i:i+chunk_size] for i in range(0, len(lst), chunk_size)]
 
+
 def update_and_replicate_config_files(config_dir):
-    
     config_files = os.listdir(config_dir)
-
     for f in config_files:
-        with open(args.f, 'r') as f:
-            config = yaml.safe_load(f)
-
-
-        list_of_genes = pd.read_csv(config['target_gene_name_file'])
-        list_of_genes = list(list_of_genes['target_gene'])
-        list_of_genes = chunk_list(list_of_genes)
-
-        counter = 0
-        for l in list_of_genes:
-            config['selected_genes'] = l
-
-            name = cpnfig['tissue'].replace(' ', '_')
-            filename = op.join(config_dir, f'{name}_{counter}.yaml')
-            with open(filename, 'w') as yaml_file:
-                yaml.dump(config, yaml_file, default_flow_style=False)
-            
-            counter += 1
-
-
-
-
-        
-
-
+        try:
+            with open(op.join(config_dir, f), 'r') as f:
+                config = yaml.safe_load(f)
+                
+            list_of_genes = pd.read_csv(config['target_gene_name_file'])
+            list_of_genes = list(list_of_genes['target_gene'])
+            list_of_genes = chunk_list(list_of_genes)
+            counter = 0
+            for l in list_of_genes:
+                config['selected_genes'] = l
+                name = cpnfig['tissue'].replace(' ', '_')
+                filename = op.join(config_dir, f'{name}_{counter}.yaml')
+                with open(filename, 'w') as yaml_file:
+                    yaml.dump(config, yaml_file, default_flow_style=False)
+                counter += 1
+                
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description="Process a file from the command line.")
 
     # Add the file argument
-    parser.add_argument('-f', type=str, help='The file to process')
-    parser.add_argument('-o', type=str, help='The output_directory')
+    parser.add_argument('-f', type=str, help='The file to process', default = None)
+    parser.add_argument('-o', type=str, help='The output_directory', default = None)
     parser.add_argument('-j', type=str, help='Batch submissions scripts', default=None)
     parser.add_argument('-p', type=str, help='Batch preproccessing scripts', default=None)
     parser.add_argument('-u', type=str, help='Update config files', default=None)
 
     # Parse the arguments
     args = parser.parse_args()
-    config = read_template(args.f)
-    os.makedirs(args.o, exist_ok=True)
-    save_new_configs(args.o, config)
+
+    if args.f is not None:
+        config = read_template(args.f)
+   
+    if args.o is not None and args.f is not None:
+        os.makedirs(args.o, exist_ok=True)
+        save_new_configs(args.o, config)
 
     if args.j is not None:
         os.makedirs(args.j, exist_ok=True)
