@@ -42,7 +42,7 @@ def remove_version_id(data, transcript_column='transcript_id'):
     """
     Remove all version ids from the transcript and gene columns
     """
-    data[transcript_column] = data[transcript_column].apply(lambda x: re.sub(r"\.[0-9]", "", x))
+    data[transcript_column] = data[transcript_column].str.split('.').str[0]
     return data
 
 
