@@ -115,8 +115,9 @@ def preprocessing_pipeline_GTEX(config):
 
 
     ## RUN INFERENCE for transcript based network
-    results_dir = op.join(config['results_dir'], config['tissue'])
-    
+    tissue_string = config['tissue'].replace(' ', '_')
+    results_dir = op.join(config['results_dir'], tissue_string)
+    os.makedirs(results_dir, exist_ok=True)
 
     tissue_output_file = op.join(results_dir, f"{config['tissue'].replace(' ', '_')}.tsv")
     data_gex = create_GTEX_data(tissue=config['tissue'], 
@@ -126,7 +127,7 @@ def preprocessing_pipeline_GTEX(config):
                                 biomart=biomart, 
                                 standardize_data= config['standardize_data'])
  
-    target_gene_names = set(data_gex.column.tolist()).intersection(set(tf_list))
+    target_gene_names = set(data_gex.columns.tolist()).intersection(set(tf_list))
     target_gene_output_file = op.join(results_dir, f"{config['tissue'].replace(' ', '_')}_target_genes.tsv")
     pd.DataFrame({'target_gene': list(target_gene_names)}).to_csv(target_gene_output_file)
 
@@ -136,7 +137,7 @@ if __name__ == "__main__":
     import yaml
     import argparse
     import os
-
+    from codecarbon import OfflineEmissionsTracker
     parser = argparse.ArgumentParser(description="Process a file from the command line.")
     
     # Add the file argument
