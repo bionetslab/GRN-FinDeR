@@ -151,6 +151,40 @@ def example_workflow():
 
     print(grn_w_pvals)
 
+def run_multiple_clusterings(expression_file_path, cluster_list : list[int], num_threads : int,
+                             output_path : str):
+    """Run several hierarchical clusterings based on Wasserstein distance matrix in order to analyze
+    different possible number of clusters.
+
+    Args:
+        expression_file_path (str): Path to input file containing preprocessed expression matrix. Should be
+            tab-separated csv file, with gene symbols as columns. 
+        cluster_list (list[int]): List of number of clusters that input genes should be clustered into.
+        num_threads (int): How many threads to use for numba based distance matrix computation.
+        output_path (str): Where to save resulting clusterings.
+    """
+    import time
+    import pandas as pd
+    import pickle
+
+    from src.distance_matrix import compute_wasserstein_distance_matrix
+    from src.clustering import cluster_genes_to_dict
+
+    # Read preprocessed expression matrix and TF list.
+    exp_matrix = pd.read_csv(expression_file_path, sep='\t', index_col=0)
+
+    # Compute Wasserstein distance matrix.
+    print("Computing Wasserstein distance matrix...")
+    dist_mat = compute_wasserstein_distance_matrix(exp_matrix, num_threads)
+
+    # Cluster genes based on Wasserstein distance.
+    for cluster_size in cluster_list:
+        print(f'Clustering genes into {cluster_size} clusters...')
+        gene_to_cluster = cluster_genes_to_dict(dist_mat, num_clusters=cluster_size)
+        with open(output_path + f'clustering_{cluster_size}.pkl', 'wb') as f:
+            pickle.dump(gene_to_cluster, f)
+
+
 
 def run_approximate_fdr_control(expression_file_path : str, tf_file_path : str, grn_file_path : str,
                                 num_permutations : int, num_clusters : int, num_threads : int,
