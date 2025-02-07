@@ -98,9 +98,11 @@ def create_GTEX_data(tissue, gtex_count_file, gtex_sample_attribute_file, proces
 
         if standardize_data:
             data_gex[data_gex.columns] = scale(data_gex.values)
-    
+        
+        print(f"Gene expression data shape {data_gex.shape}")
+        print(data_gex.columns)
         data_gex.to_csv(processed_output_file, sep = '\t')
     else:
-        data_gex = pd.read_csv(processed_output_file, sep = '\t')
+        data_gex = pd.read_csv(processed_output_file, sep = '\t', header = 0, index_col=0)
 
     return data_gex
