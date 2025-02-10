@@ -61,6 +61,10 @@ def inference_pipeline_GTEX(config):
                                 biomart=biomart, 
                                 standardize_data= config['standardize_data'])
  
+        
+    genes = list(config['selected_genes'])+list(tf_list['Gene stable ID'].unique().tolist())
+    genes = list(set(genes).intersection(set(data_gex.columns.unique().tolist())))
+    data_gex = data_gex.loc[:,genes]
 
     cluster = LocalCluster()
     client = Client(cluster)

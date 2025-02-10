@@ -18,8 +18,9 @@ def save_new_configs(path, config):
         name = t.replace(' ', '_')
         filename = op.join(path, f'{name}.yaml')
         
-        with open(filename, 'w') as yaml_file:
-            yaml.dump(config, yaml_file, default_flow_style=False)
+        if not op.isfile(filename):
+            with open(filename, 'w') as yaml_file:
+                yaml.dump(config, yaml_file, default_flow_style=False)
 
 
 
@@ -101,28 +102,28 @@ conda deactivate
         with open(jobscript_file, 'w') as handle:
             handle.write(script_content)
 
-def chunk_list(lst, chunk_size=100):
+def chunk_list(lst, chunk_size=500):
     return [lst[i:i+chunk_size] for i in range(0, len(lst), chunk_size)]
 
 
 def update_and_replicate_config_files(config_dir):
     config_files = os.listdir(config_dir)
     for f in config_files:
-        try:
-            with open(op.join(config_dir, f), 'r') as f:
-                config = yaml.safe_load(f)
-                
+        with open(op.join(config_dir, f), 'r') as f:
+            config = yaml.safe_load(f)
+        if 'target_gene_name_file' in config:       
             list_of_genes = pd.read_csv(config['target_gene_name_file'])
             list_of_genes = list(list_of_genes['target_gene'])
             list_of_genes = chunk_list(list_of_genes)
             counter = 0
             for l in list_of_genes:
                 config['selected_genes'] = l
-                name = cpnfig['tissue'].replace(' ', '_')
+                name = config['tissue'].replace(' ', '_')
                 filename = op.join(config_dir, f'{name}_{counter}.yaml')
                 with open(filename, 'w') as yaml_file:
                     yaml.dump(config, yaml_file, default_flow_style=False)
                 counter += 1
+
                 
 if __name__ == '__main__':
     import argparse

@@ -127,7 +127,7 @@ def preprocessing_pipeline_GTEX(config):
                                 biomart=biomart, 
                                 standardize_data= config['standardize_data'])
  
-    target_gene_names = set(data_gex.columns.tolist()).intersection(set(tf_list['Gene stable ID']))
+    target_gene_names = set(data_gex.columns.tolist()).difference(set(tf_list['Gene stable ID']))
     target_gene_output_file = op.join(results_dir, f"{config['tissue'].replace(' ', '_')}_target_genes.tsv")
     pd.DataFrame({'target_gene': list(target_gene_names)}).to_csv(target_gene_output_file)
 
