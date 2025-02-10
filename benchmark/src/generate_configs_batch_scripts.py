@@ -102,7 +102,8 @@ conda deactivate
         with open(jobscript_file, 'w') as handle:
             handle.write(script_content)
 
-def chunk_list(lst, chunk_size=500):
+# has been changed bc. 500 was too much.
+def chunk_list(lst, chunk_size=300):
     return [lst[i:i+chunk_size] for i in range(0, len(lst), chunk_size)]
 
 
@@ -124,6 +125,39 @@ def update_and_replicate_config_files(config_dir):
                     yaml.dump(config, yaml_file, default_flow_style=False)
                 counter += 1
 
+def create_new_configs_for_unprocessed_genes(config_dir):
+    config_files = os.listdir(config_dir)
+    for f in config_files:
+        with open(op.join(config_dir, f), 'r') as f:
+            config = yaml.safe_load(f)
+        if 'target_gene_name_file' in config:       
+            list_of_genes = pd.read_csv(config['target_gene_name_file'])
+            list_of_genes = list(list_of_genes['target_gene'])
+
+            # Read genes already processed from directory
+            name = config['tissue'].replace(' ', '_')
+            processed_genes = os.listdir(op.join(config['results_dir'], name, 'grn'))
+            processed_genes = [gene.split(".")[0] for gene in processed_genes]
+
+            # intersect with the list of target genes
+            
+            list_of_genes = set(list_of_genes).difference(set(processed_genes))
+            list_of_genes = list(list_of_genes)
+            
+            print(f'Number of unprocessed genes: {len(list_of_genes)}')
+
+            #Chunk new list of genes
+            list_of_genes = chunk_list(list_of_genes)
+            counter = 0
+            for l in list_of_genes:
+                config['selected_genes'] = l
+                name = config['tissue'].replace(' ', '_')
+                filename = op.join(config_dir, f'RE_{name}_{counter}.yaml')
+                with open(filename, 'w') as yaml_file:
+                    yaml.dump(config, yaml_file, default_flow_style=False)
+                counter += 1
+
+
                 
 if __name__ == '__main__':
     import argparse
@@ -135,6 +169,8 @@ if __name__ == '__main__':
     parser.add_argument('-j', type=str, help='Batch submissions scripts', default=None)
     parser.add_argument('-p', type=str, help='Batch preproccessing scripts', default=None)
     parser.add_argument('-u', type=str, help='Update config files', default=None)
+    parser.add_argument('-g', type=str, help='Create missing gene config files', default=None)
+
 
     # Parse the arguments
     args = parser.parse_args()
@@ -154,6 +190,8 @@ if __name__ == '__main__':
         save_preprocessing_script(config, args.p)
     if args.u is not None and args.o is not None:
         update_and_replicate_config_files(args.o)
+    if args.g is not None and args.o is not None:
+        create_new_configs_for_unprocessed_genes(args.o)
 
 
 
