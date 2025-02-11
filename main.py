@@ -151,42 +151,64 @@ def example_workflow():
 
     print(grn_w_pvals)
 
-def run_multiple_clusterings(expression_file_path, cluster_list : list[int], num_threads : int,
-                             output_path : str):
-    """Run several hierarchical clusterings based on Wasserstein distance matrix in order to analyze
-    different possible number of clusters.
-
-    Args:
-        expression_file_path (str): Path to input file containing preprocessed expression matrix. Should be
-            tab-separated csv file, with gene symbols as columns. 
-        cluster_list (list[int]): List of number of clusters that input genes should be clustered into.
-        num_threads (int): How many threads to use for numba based distance matrix computation.
-        output_path (str): Where to save resulting clusterings.
-    """
-    import time
-    import pandas as pd
+def generate_input_multiple_tissues(root_directory : str, num_threads : int,
+                                    cluster_sizes : list[int]):
     import pickle
-
     from src.distance_matrix import compute_wasserstein_distance_matrix
     from src.clustering import cluster_genes_to_dict
+    import time 
+    import os
+    import pandas as pd
+    from arboreto.algo import grnboost2
+    
+    subdirectories = [os.path.join(root_directory, d) for d in os.listdir(root_directory) if os.path.isdir(os.path.join(root_directory, d))]
+    # Process all tissues.
+    for subdir in subdirectories:
+        print(f'Processing tissue {subdir}...')
+        file_names = os.listdir(subdir)
+        sorted_file_names = sorted(file_names, key=len)
+        expression_file = sorted_file_names[0]
+        print(expression_file)
+        targets_file = sorted_file_names[1]
+        print(targets_file)
+        expression_mat = pd.read_csv(os.path.join(subdir, expression_file), sep='\t', index_col=0)
+        targets = set(pd.read_csv(os.path.join(subdir, targets_file), index_col=0)['target_gene'].tolist())
+        
+        runtimes = []
+        # Run GRN inference once.
+        all_genes = set(expression_mat.columns.tolist())
+        tfs = list(all_genes - targets)
 
-    # Read preprocessed expression matrix and TF list.
-    exp_matrix = pd.read_csv(expression_file_path, sep='\t', index_col=0)
+        start_grn = time.time()
+        grn = grnboost2(expression_data=expression_mat, tf_names=tfs, verbose=True, seed=42)
+        end_grn = time.time()
+        runtimes.append(end_grn - start_grn)
+        grn.to_csv(os.path.join(subdir, 'input_grn.csv'))
+        
+        print("Computing Wasserstein distance matrix...")
+        start_distance = time.time()
+        dist_mat = compute_wasserstein_distance_matrix(expression_mat, num_threads)
+        end_distance = time.time()
+        dist_mat.to_csv(os.path.join(subdir, 'distance_matrix.csv'))
+        runtimes.append(end_distance - start_distance)
+        
+        print("Clustering genes...")
+        for cluster_size in cluster_sizes:
+            start_cluster = time.time()
+            gene_to_cluster = cluster_genes_to_dict(dist_mat, num_clusters=cluster_size)
+            end_cluster = time.time()
+            runtimes.append(end_cluster - start_cluster)
+            os.makedirs(os.path.join(subdir, 'clusterings'), exist_ok=True)
+            with open(os.path.join(subdir, 'clusterings', f'clustering_{cluster_size}.pkl'), 'wb') as f:
+                pickle.dump(gene_to_cluster, f)
+        
+        column_names = ['grn', 'distance'] + [f'clustering_{x}' for x in cluster_sizes]
+        runtimes_df = pd.DataFrame(columns=column_names)
+        runtimes_df.loc['time'] = runtimes
+        runtimes_df.to_csv(os.path.join(subdir, 'runtimes.csv'))
+        
 
-    # Compute Wasserstein distance matrix.
-    print("Computing Wasserstein distance matrix...")
-    dist_mat = compute_wasserstein_distance_matrix(exp_matrix, num_threads)
-
-    # Cluster genes based on Wasserstein distance.
-    for cluster_size in cluster_list:
-        print(f'Clustering genes into {cluster_size} clusters...')
-        gene_to_cluster = cluster_genes_to_dict(dist_mat, num_clusters=cluster_size)
-        with open(output_path + f'clustering_{cluster_size}.pkl', 'wb') as f:
-            pickle.dump(gene_to_cluster, f)
-
-
-
-def run_approximate_fdr_control(expression_file_path : str, tf_file_path : str, grn_file_path : str,
+def run_approximate_fdr_control(expression_file_path : str, target_file_path : str, grn_file_path : str,
                                 num_permutations : int, num_clusters : int, num_threads : int,
                                 output_path : str):
     """Computes approximate FDR control for GRNs based on empirical P-value computation.
@@ -195,7 +217,7 @@ def run_approximate_fdr_control(expression_file_path : str, tf_file_path : str, 
         expression_file_path (str): Path to input file containig preprocessed expression matrix. Should be
             tab-separated csv file, with gene symbols as columns.
         grn (str): Path to dataframe containing edges of to-be-corrected GRN.
-        tf_file_path (str): Path to txt file containig newline-separated list of TFs as gene symbols.
+        tf_file_path (str): Path to tsv file containig newline-separated list of TFs as gene symbols.
         num_permutations (int): Number of permutations to run for empirical P-value computation.
         num_clusters (int): Number of clusters to cluster genes into and draw representatives from.
         num_threads (int): How many threads to use for numba-based parallelized computation of 
@@ -214,12 +236,10 @@ def run_approximate_fdr_control(expression_file_path : str, tf_file_path : str, 
     
     # Read preprocessed expression matrix and TF list.
     exp_matrix = pd.read_csv(expression_file_path, sep='\t', index_col=0)
-    with open(tf_file_path) as tf:
-        tfs = [line.strip() for line in tf]
-        
-    # Make sure that all TFs are actually contained in expression matrix [check if this is necessary?].
-    tfs = list(set(tfs).intersection(list(exp_matrix.columns)))
-        
+    all_genes = set(exp_matrix.columns.tolist())
+    targets = set(pd.read_csv(target_file_path, index_col=0)['target_gene'].tolist())        
+    tfs = list(all_genes - targets)
+    
     # Read GRN dataframe.
     # grn = pd.read_csv(grn_file_path, sep='\t')
     grn = grnboost2(expression_data=exp_matrix, tf_names=tfs, verbose=True, seed=777)
@@ -262,14 +282,16 @@ if __name__ == '__main__':
 
     # Adjust paths (orig. GTEX data path: /data/bionets/datasets/gtex/<tissue>)
     # TF file URL: https://resources.aertslab.org/cistarget/tf_lists/
-    expression_file_path = "/data/bionets/xa39zypy/GTEX/GTEX_Prostate_filtered_standardized.tsv"
-    tf_file_path = "/data/bionets/xa39zypy/GTEX/allTFs_hg38.txt"
+    expression_file_path = "/data/bionets/xa39zypy/gtex/Prostate/Prostate.tsv"
+    # tf_file_path = "/data/bionets/xa39zypy/GTEX/allTFs_hg38.txt"
+    target_file_path = "/data/bionets/xa39zypy/gtex/Prostate/Prostate_target_genes.tsv"
     grn_file_path = ""
-    num_permutations = 100
+    num_permutations = 1
     num_clusters = 100
     num_threads = 32
     output_path = "/data/bionets/xa39zypy/GRN-FinDeR/data/Prostate/"
-    run_approximate_fdr_control(expression_file_path, tf_file_path, grn_file_path, 
+    run_approximate_fdr_control(expression_file_path, target_file_path, grn_file_path, 
                                 num_permutations, num_clusters, num_threads, output_path)
+    
     
     print("done")
