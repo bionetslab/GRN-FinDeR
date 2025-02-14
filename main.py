@@ -288,19 +288,21 @@ def compute_cluster_metrics(root_directory : str, num_clusters : list[int]):
             print(f'# Clustering silhouette score: {sil_score}')
         
         # Save assemble dictionaries to file.
-        with open(os.path.join(subdir, 'clusterings', "sizes_per_clustering.pkl"), 'wb') as f:
+        savedir = os.path.join(subdir, 'clustering_metrics')
+        os.makedirs(savedir, exist_ok=True)
+        with open(os.path.join(savedir, "sizes_per_clustering.pkl"), 'wb') as f:
             pickle.dump(cluster_sizes_dict, f)
         
-        with open(os.path.join(subdir, 'clusterings', 'num_singletons_per_clustering.pkl'), 'wb') as f:
+        with open(os.path.join(savedir, 'num_singletons_per_clustering.pkl'), 'wb') as f:
             pickle.dump(num_singletons_dict, f)
         
-        with open(os.path.join(subdir, 'clusterings', 'diameters_per_clustering.pkl'), 'wb') as f:
+        with open(os.path.join(savedir, 'diameters_per_clustering.pkl'), 'wb') as f:
             pickle.dump(cluster_diam_dict, f)
 
-        with open(os.path.join(subdir, 'clusterings', 'median_distances_per_clustering.pkl'), 'wb') as f:
+        with open(os.path.join(savedir, 'median_distances_per_clustering.pkl'), 'wb') as f:
             pickle.dump(median_cluster_member_distances_dict, f)
 
-        with open(os.path.join(subdir, 'clusterings', 'silhouette_score_per_clustering.pkl'), 'wb') as f:
+        with open(os.path.join(savedir, 'silhouette_score_per_clustering.pkl'), 'wb') as f:
             pickle.dump(silhouette_score_dict, f)
 
 
