@@ -14,7 +14,7 @@ def plot_cluster_metrics(file_path : str, clustering_sizes : list[int]):
     subdirectories = [os.path.join(file_path, d) for d in os.listdir(file_path) if os.path.isdir(os.path.join(file_path, d))]
     tissues = [str(d) for d in os.listdir(file_path) if os.path.isdir(os.path.join(file_path, d))]
     # Process all tissues.
-    for tissue, subdir in zip(tissues[0], subdirectories[0]):
+    for tissue, subdir in zip(tissues, subdirectories):
         print(f'Processing tissue {tissue}...')
         
         # Open precompute cluster metrics.
@@ -36,15 +36,34 @@ def plot_cluster_metrics(file_path : str, clustering_sizes : list[int]):
         diams_data = list(subset_diams_per_clustering.values())
         sizes_data = list(subset_sizes_per_clustering.values())
         singletons_list = [val for _, val in subset_singletons_per_clustering.items()]
-        
-        plt.figure(figsize=(8, 5))
-        plt.boxplot(sizes_data, labels=x_labels)  # Assign labels to x-axis
-        plt.xlabel("Clustering Size")
-        plt.ylabel("Cluster Sizes")
-        plt.title("Box Plot of Cluster Sizes by Clustering Size")
-        plt.show()
+
+        dpi = 300
+        fig, ax = plt.subplots(figsize=(8, 5), dpi=dpi)
+        ax.boxplot(sizes_data, tick_labels=[str(i) for i in x_labels])  # Assign labels to x-axis
+        ax.set_xlabel("Number of Clusters")
+        ax.set_ylabel("Cluster Sizes")
+        ax.grid(True, linestyle='-', color='grey', alpha=0.6)
+        plt.savefig(os.path.join(subdir, 'cluster_sizes.png'), dpi=dpi)
+        plt.close(fig)
+
+        fig, ax = plt.subplots(figsize=(8, 5), dpi=dpi)
+        ax.violinplot(diams_data)
+        ax.set_xticks(list(range(1, len(diams_data) + 1)))
+        ax.set_xticklabels(x_labels)
+        ax.set_xlabel("Number of Clusters")
+        ax.set_ylabel("Cluster Diameters")
+        plt.savefig(os.path.join(subdir, 'cluster_diameters.png'), dpi=dpi)
+        plt.close(fig)
+
+        fig, ax = plt.subplots(figsize=(8, 5), dpi=dpi)
+        ax.plot(x_labels, singletons_list, marker='o')
+        # ax.set_xticks(list(range(1, len(diams_data) + 1)))
+        # ax.set_xticklabels(x_labels)
+        ax.set_xlabel("Number of Clusters")
+        ax.set_ylabel("Number of Singletons")
+        plt.savefig(os.path.join(subdir, 'number_of_singletons.png'), dpi=dpi)
         
         
 if __name__ == "__main__":
-    plot_cluster_metrics("~/Projects/GRN-FinDeR.git/data/gtex_cluster_data/", list(range(100, 5001, 100)))
+    plot_cluster_metrics('/data/bionets/ac07izid/grn/data/gtex_cluster_data', list(range(100, 5001, 100)))
     
