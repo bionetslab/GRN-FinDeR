@@ -152,7 +152,7 @@ def example_workflow():
     print(grn_w_pvals)
 
 def generate_input_multiple_tissues(root_directory : str, num_threads : int,
-                                    cluster_sizes : list[int]):
+                                    num_clusters : list[int]):
     import pickle
     from src.distance_matrix import compute_wasserstein_distance_matrix
     from src.clustering import cluster_genes_to_dict
@@ -193,34 +193,36 @@ def generate_input_multiple_tissues(root_directory : str, num_threads : int,
         runtimes.append(end_distance - start_distance)
         
         print("Clustering genes...")
-        for cluster_size in cluster_sizes:
+        for n in num_clusters:
             start_cluster = time.time()
-            gene_to_cluster = cluster_genes_to_dict(dist_mat, num_clusters=cluster_size)
+            gene_to_cluster = cluster_genes_to_dict(dist_mat, num_clusters=n)
             end_cluster = time.time()
             runtimes.append(end_cluster - start_cluster)
             os.makedirs(os.path.join(subdir, 'clusterings'), exist_ok=True)
-            with open(os.path.join(subdir, 'clusterings', f'clustering_{cluster_size}.pkl'), 'wb') as f:
+            with open(os.path.join(subdir, 'clusterings', f'clustering_{n}.pkl'), 'wb') as f:
                 pickle.dump(gene_to_cluster, f)
         
-        column_names = ['grn', 'distance'] + [f'clustering_{x}' for x in cluster_sizes]
+        column_names = ['grn', 'distance'] + [f'clustering_{x}' for x in num_clusters]
         runtimes_df = pd.DataFrame(columns=column_names)
         runtimes_df.loc['time'] = runtimes
         runtimes_df.to_csv(os.path.join(subdir, 'runtimes.csv'))
 
-def plot_cluster_metrics(root_directory : str, cluster_sizes : list[int]):
+def compute_cluster_metrics(root_directory : str, num_clusters : list[int]):
     import pickle
     import os
     import pandas as pd
+    import numpy as np
+    from sklearn.metrics import silhouette_score
     
     subdirectories = [os.path.join(root_directory, d) for d in os.listdir(root_directory) if os.path.isdir(os.path.join(root_directory, d))]
     tissues = [str(d) for d in os.listdir(root_directory) if os.path.isdir(os.path.join(root_directory, d))]
     # Process all tissues.
     for tissue, subdir in zip(tissues, subdirectories):
-        print(f'Processing tissue {tissue}...')
-        expression_file = f'{tissue}.tsv'
-        targets_file = f'{tissue}_target_genes.tsv'
-        expression_mat = pd.read_csv(os.path.join(subdir, expression_file), sep='\t', index_col=0)
-        targets = set(pd.read_csv(os.path.join(subdir, targets_file), index_col=0)['target_gene'].tolist())
+        print(f'# ### Processing tissue {tissue}...')
+        # expression_file = f'{tissue}.tsv'
+        # targets_file = f'{tissue}_target_genes.tsv'
+        # expression_mat = pd.read_csv(os.path.join(subdir, expression_file), sep='\t', index_col=0)
+        # targets = set(pd.read_csv(os.path.join(subdir, targets_file), index_col=0)['target_gene'].tolist())
         
         # Read distance matrix.
         distance_file = os.path.join(subdir, 'distance_matrix.csv')
@@ -231,9 +233,12 @@ def plot_cluster_metrics(root_directory : str, cluster_sizes : list[int]):
         cluster_sizes_dict = dict()
         num_singletons_dict = dict()
         cluster_diam_dict = dict()
-        for num_clusters in cluster_sizes:
+        median_cluster_member_distances_dict = dict()
+        silhouette_score_dict = dict()
+        for n in num_clusters:
+            print(f'# ## Number of clusters: {n}...')
             # Read clustering from respective file.
-            cluster_file = os.path.join(subdir, 'clusterings', f'clustering_{num_clusters}.pkl')
+            cluster_file = os.path.join(subdir, 'clusterings', f'clustering_{n}.pkl')
             with open(cluster_file, 'rb') as handle:
                 gene_to_cluster = pickle.load(handle)
             # Invert gene-to-cluster dictionary to obtain cluster-to-gene dictionary.
@@ -243,20 +248,44 @@ def plot_cluster_metrics(root_directory : str, cluster_sizes : list[int]):
                     cluster_to_gene[val].append(key)
                 else:
                     cluster_to_gene[val] = [key]
-            # Compute sizes of each cluster.
+            # ### Compute sizes of each cluster.
             sizes_per_cluster = [len(genes) for _, genes in cluster_to_gene.items()]
-            cluster_sizes_dict[num_clusters] = sizes_per_cluster 
-            # Compute number of singleton clusters.
-            num_singletons = sum([1 for _, genes in cluster_to_gene.items() if len(genes)==0])
-            num_singletons_dict[num_clusters] = num_singletons
-            # Compute diameter of cluster, i.e. maximum Wasserstein distance of pairs.
+            cluster_sizes_dict[n] = sizes_per_cluster
+            # print(f'# Cluster sizes:\n{sizes_per_cluster}')
+            # ### Compute number of singleton clusters.
+            num_singletons = sum([1 for _, genes in cluster_to_gene.items() if len(genes)==1])
+            num_singletons_dict[n] = num_singletons
+            print(f'# Number of singletons: {num_singletons}')
+            # ### Compute diameter and median distance of clusters, i.e. maximum/median Wasserstein distance of pairs.
             cluster_diameters = []
+            median_cluster_member_distances = []
             for _, genes in cluster_to_gene.items():
                 # Subset distance matrix to given genes in cluster.
                 subset_matrix = distance_df.loc[genes, genes].to_numpy()
+                # Look up cluster diameter
                 cluster_diam = subset_matrix.max()
                 cluster_diameters.append(cluster_diam)
-            cluster_diam_dict[num_clusters] = cluster_diameters
+                # Compute median distance between cluster members
+                upper_tri_elements = subset_matrix[np.triu_indices(subset_matrix.shape[0], k=1)]
+                if upper_tri_elements.size == 0:
+                    # Singleton has only self distance which is 0
+                    cluster_median_dist = 0.0
+                else:
+                    cluster_median_dist = np.median(upper_tri_elements)
+
+                median_cluster_member_distances.append(cluster_median_dist)
+
+            cluster_diam_dict[n] = cluster_diameters
+            median_cluster_member_distances_dict[n] = median_cluster_member_distances
+            # print(f'# Cluster diameters:\n{cluster_diameters}')
+            # print(f'# Cluster median distances:\n{median_cluster_member_distances_dict}')
+            # ### Compute silhouette score
+            # Create label vector
+            cluster_label_vec = [gene_to_cluster[gene] for gene in distance_df.columns.tolist()]
+            # Compute silhouette score
+            sil_score = silhouette_score(distance_df.to_numpy(), cluster_label_vec, metric='precomputed')
+            silhouette_score_dict[n] = sil_score
+            print(f'# Clustering silhouette score: {sil_score}')
         
         # Save assemble dictionaries to file.
         with open(os.path.join(subdir, 'clusterings', "sizes_per_clustering.pkl"), 'wb') as f:
@@ -266,10 +295,16 @@ def plot_cluster_metrics(root_directory : str, cluster_sizes : list[int]):
             pickle.dump(num_singletons_dict, f)
         
         with open(os.path.join(subdir, 'clusterings', 'diameters_per_clustering.pkl')) as f:
-            pickle.dump(cluster_diam_dict, f)                
+            pickle.dump(cluster_diam_dict, f)
+
+        with open(os.path.join(subdir, 'clusterings', 'median_distances_per_clustering.pkl')) as f:
+            pickle.dump(median_cluster_member_distances_dict, f)
+
+        with open(os.path.join(subdir, 'clusterings', 'silhouette_score_per_clustering.pkl')) as f:
+            pickle.dump(silhouette_score_dict, f)
 
 
-def run_fdr_permutations_per_tissue(root_directory : str, cluster_sizes : list[int],
+def run_fdr_permutations_per_tissue(root_directory : str, num_clusters : list[int],
                                     num_permutations : int = 1000):
     import pickle
     import time 
@@ -293,9 +328,9 @@ def run_fdr_permutations_per_tissue(root_directory : str, cluster_sizes : list[i
         
         # Iterate over desired cluster sizes.
         runtimes = []
-        for cluster_size in cluster_sizes:
+        for n in num_clusters:
             # Read clustering from respective file.
-            cluster_file = os.path.join(subdir, 'clusterings', f'clustering_{cluster_size}.pkl')
+            cluster_file = os.path.join(subdir, 'clusterings', f'clustering_{n}.pkl')
             with open(cluster_file, 'rb') as handle:
                 gene_to_cluster = pickle.load(handle)
             fdr_start = time.time()
@@ -305,10 +340,10 @@ def run_fdr_permutations_per_tissue(root_directory : str, cluster_sizes : list[i
             runtimes.append((fdr_end - fdr_start)/num_permutations)
             
         # Save runtimes per cluster size to file.
-        column_names = [f'clusters_{x}' for x in cluster_sizes]
+        column_names = [f'clusters_{x}' for x in num_clusters]
         runtimes_df = pd.DataFrame(columns=column_names)
         runtimes_df.loc['time'] = runtimes
-        runtimes_df.to_csv(os.path.join(subdir, 'times_per_cluster_sizes.csv'))
+        runtimes_df.to_csv(os.path.join(subdir, 'times_per_num_clusters.csv'))
         
 
 def run_approximate_fdr_control(expression_file_path : str, target_file_path : str, grn_file_path : str,
@@ -383,18 +418,46 @@ def run_approximate_fdr_control(expression_file_path : str, target_file_path : s
 
 if __name__ == '__main__':
 
-    # Adjust paths (orig. GTEX data path: /data/bionets/datasets/gtex/<tissue>)
-    # TF file URL: https://resources.aertslab.org/cistarget/tf_lists/
-    expression_file_path = "/data/bionets/xa39zypy/gtex/Prostate/Prostate.tsv"
-    # tf_file_path = "/data/bionets/xa39zypy/GTEX/allTFs_hg38.txt"
-    target_file_path = "/data/bionets/xa39zypy/gtex/Prostate/Prostate_target_genes.tsv"
-    grn_file_path = ""
-    num_permutations = 1
-    num_clusters = 100
-    num_threads = 32
-    output_path = "/data/bionets/xa39zypy/GRN-FinDeR/data/Prostate/"
-    run_approximate_fdr_control(expression_file_path, target_file_path, grn_file_path, 
-                                num_permutations, num_clusters, num_threads, output_path)
-    
+    import os
+
+    generate_fdr_control_input = False
+    cluster_metrics = True
+    fdr = False
+
+    if generate_fdr_control_input:
+        # ### Compute input to FDR control for all tissues (GRN, distance matrix, clustering)
+        root_dir = os.path.join(os.getcwd(), 'data/gtex_tissues_preprocessed')
+        n_threads = 20
+        num_clusters_list = list(range(100, 5001, 100))
+        generate_input_multiple_tissues(
+            root_directory=root_dir,
+            num_threads=n_threads,
+            num_clusters=num_clusters_list,
+        )
+    elif cluster_metrics:
+        # ### Compute cluster metrics for all tissues
+        root_dir = os.path.join(os.getcwd(), 'data/gtex_tissues_preprocessed')
+        num_clusters_list = list(range(100, 5001, 100))
+        compute_cluster_metrics(
+            root_directory=root_dir,
+            num_clusters=num_clusters_list,
+        )
+
+    elif fdr:
+        # ### Run approximate FDR control for one tissue
+        # Adjust paths (orig. GTEX data path: /data/bionets/datasets/gtex/<tissue>)
+        # TF file URL: https://resources.aertslab.org/cistarget/tf_lists/
+        expression_file_path = "/data/bionets/xa39zypy/gtex/Prostate/Prostate.tsv"
+        # tf_file_path = "/data/bionets/xa39zypy/GTEX/allTFs_hg38.txt"
+        target_file_path = "/data/bionets/xa39zypy/gtex/Prostate/Prostate_target_genes.tsv"
+        grn_file_path = ""
+        num_permutations = 1
+        n_clusters = 100
+        num_threads = 32
+        output_path = "/data/bionets/xa39zypy/GRN-FinDeR/data/Prostate/"
+        run_approximate_fdr_control(expression_file_path, target_file_path, grn_file_path,
+                                    num_permutations, n_clusters, num_threads, output_path)
+    else:
+        pass
     
     print("done")
