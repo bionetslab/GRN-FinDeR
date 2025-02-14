@@ -423,7 +423,8 @@ if __name__ == '__main__':
     import os
 
     generate_fdr_control_input = False
-    cluster_metrics = True
+    cluster_metrics = False
+    plot_clust_metrics = True
     fdr = False
 
     if generate_fdr_control_input:
@@ -436,6 +437,7 @@ if __name__ == '__main__':
             num_threads=n_threads,
             num_clusters=num_clusters_list,
         )
+
     elif cluster_metrics:
         # ### Compute cluster metrics for all tissues
         root_dir = os.path.join(os.getcwd(), 'data/gtex_tissues_preprocessed')
@@ -443,6 +445,14 @@ if __name__ == '__main__':
         compute_cluster_metrics(
             root_directory=root_dir,
             num_clusters=num_clusters_list,
+        )
+
+    elif plot_clust_metrics:
+        from src.postprocessing import plot_cluster_metrics
+        root_dir = os.path.join(os.getcwd(), 'data/gtex_tissues_preprocessed')
+        plot_cluster_metrics(
+        file_path=root_dir,
+        num_clusters=list(range(100, 5001, 100)),
         )
 
     elif fdr:
@@ -459,6 +469,7 @@ if __name__ == '__main__':
         output_path = "/data/bionets/xa39zypy/GRN-FinDeR/data/Prostate/"
         run_approximate_fdr_control(expression_file_path, target_file_path, grn_file_path,
                                     num_permutations, n_clusters, num_threads, output_path)
+
     else:
         pass
     
