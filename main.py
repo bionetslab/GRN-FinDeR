@@ -1,4 +1,5 @@
 
+from typing import Union
 
 def compare_wiki_scipy_wasserstein():
 
@@ -151,16 +152,17 @@ def example_workflow():
 
     print(grn_w_pvals)
 
+
 def generate_input_multiple_tissues(root_directory : str, num_threads : int,
                                     num_clusters : list[int]):
     import pickle
     from src.distance_matrix import compute_wasserstein_distance_matrix
     from src.clustering import cluster_genes_to_dict
-    import time 
+    import time
     import os
     import pandas as pd
     from arboreto.algo import grnboost2
-    
+
     subdirectories = [os.path.join(root_directory, d) for d in os.listdir(root_directory) if os.path.isdir(os.path.join(root_directory, d))]
     # Process all tissues.
     for subdir in subdirectories:
@@ -173,7 +175,7 @@ def generate_input_multiple_tissues(root_directory : str, num_threads : int,
         print(targets_file)
         expression_mat = pd.read_csv(os.path.join(subdir, expression_file), sep='\t', index_col=0)
         targets = set(pd.read_csv(os.path.join(subdir, targets_file), index_col=0)['target_gene'].tolist())
-        
+
         runtimes = []
         # Run GRN inference once.
         all_genes = set(expression_mat.columns.tolist())
@@ -184,14 +186,14 @@ def generate_input_multiple_tissues(root_directory : str, num_threads : int,
         end_grn = time.time()
         runtimes.append(end_grn - start_grn)
         grn.to_csv(os.path.join(subdir, 'input_grn.csv'))
-        
+
         print("Computing Wasserstein distance matrix...")
         start_distance = time.time()
         dist_mat = compute_wasserstein_distance_matrix(expression_mat, num_threads)
         end_distance = time.time()
         dist_mat.to_csv(os.path.join(subdir, 'distance_matrix.csv'))
         runtimes.append(end_distance - start_distance)
-        
+
         print("Clustering genes...")
         for n in num_clusters:
             start_cluster = time.time()
@@ -201,11 +203,12 @@ def generate_input_multiple_tissues(root_directory : str, num_threads : int,
             os.makedirs(os.path.join(subdir, 'clusterings'), exist_ok=True)
             with open(os.path.join(subdir, 'clusterings', f'clustering_{n}.pkl'), 'wb') as f:
                 pickle.dump(gene_to_cluster, f)
-        
+
         column_names = ['grn', 'distance'] + [f'clustering_{x}' for x in num_clusters]
         runtimes_df = pd.DataFrame(columns=column_names)
         runtimes_df.loc['time'] = runtimes
         runtimes_df.to_csv(os.path.join(subdir, 'runtimes.csv'))
+
 
 def compute_cluster_metrics(root_directory : str, num_clusters : list[int]):
     import pickle
@@ -213,7 +216,7 @@ def compute_cluster_metrics(root_directory : str, num_clusters : list[int]):
     import pandas as pd
     import numpy as np
     from sklearn.metrics import silhouette_score
-    
+
     subdirectories = [os.path.join(root_directory, d) for d in os.listdir(root_directory) if os.path.isdir(os.path.join(root_directory, d))]
     tissues = [str(d) for d in os.listdir(root_directory) if os.path.isdir(os.path.join(root_directory, d))]
     # Process all tissues.
@@ -223,12 +226,12 @@ def compute_cluster_metrics(root_directory : str, num_clusters : list[int]):
         # targets_file = f'{tissue}_target_genes.tsv'
         # expression_mat = pd.read_csv(os.path.join(subdir, expression_file), sep='\t', index_col=0)
         # targets = set(pd.read_csv(os.path.join(subdir, targets_file), index_col=0)['target_gene'].tolist())
-        
+
         # Read distance matrix.
         distance_file = os.path.join(subdir, 'distance_matrix.csv')
         distance_df = pd.read_csv(distance_file, index_col=0)
         distance_df.index = distance_df.columns
-        
+
         # Iterate over desired cluster sizes.
         cluster_sizes_dict = dict()
         num_singletons_dict = dict()
@@ -286,16 +289,16 @@ def compute_cluster_metrics(root_directory : str, num_clusters : list[int]):
             sil_score = silhouette_score(distance_df.to_numpy(), cluster_label_vec, metric='precomputed')
             silhouette_score_dict[n] = sil_score
             print(f'# Clustering silhouette score: {sil_score}')
-        
+
         # Save assemble dictionaries to file.
         savedir = os.path.join(subdir, 'clustering_metrics')
         os.makedirs(savedir, exist_ok=True)
         with open(os.path.join(savedir, "sizes_per_clustering.pkl"), 'wb') as f:
             pickle.dump(cluster_sizes_dict, f)
-        
+
         with open(os.path.join(savedir, 'num_singletons_per_clustering.pkl'), 'wb') as f:
             pickle.dump(num_singletons_dict, f)
-        
+
         with open(os.path.join(savedir, 'diameters_per_clustering.pkl'), 'wb') as f:
             pickle.dump(cluster_diam_dict, f)
 
@@ -309,11 +312,11 @@ def compute_cluster_metrics(root_directory : str, num_clusters : list[int]):
 def run_fdr_permutations_per_tissue(root_directory : str, num_clusters : list[int],
                                     num_permutations : int = 1000):
     import pickle
-    import time 
+    import time
     import os
     import pandas as pd
     from src.fdr_calculation import approximate_fdr
-    
+
     subdirectories = [os.path.join(root_directory, d) for d in os.listdir(root_directory) if os.path.isdir(os.path.join(root_directory, d))]
     tissues = [str(d) for d in os.listdir(root_directory) if os.path.isdir(os.path.join(root_directory, d))]
     # Process all tissues.
@@ -323,11 +326,11 @@ def run_fdr_permutations_per_tissue(root_directory : str, num_clusters : list[in
         targets_file = f'{tissue}_target_genes.tsv'
         expression_mat = pd.read_csv(os.path.join(subdir, expression_file), sep='\t', index_col=0)
         targets = set(pd.read_csv(os.path.join(subdir, targets_file), index_col=0)['target_gene'].tolist())
-        
+
         # Read GRN to-be-pruned.
         grn_file = os.path.join(subdir, 'input_grn.csv')
         original_grn = pd.read_csv(grn_file, index_col=0)
-        
+
         # Iterate over desired cluster sizes.
         runtimes = []
         for n in num_clusters:
@@ -340,32 +343,52 @@ def run_fdr_permutations_per_tissue(root_directory : str, num_clusters : list[in
                                         num_permutations=num_permutations)
             fdr_end = time.time()
             runtimes.append((fdr_end - fdr_start)/num_permutations)
-            
+
         # Save runtimes per cluster size to file.
         column_names = [f'clusters_{x}' for x in num_clusters]
         runtimes_df = pd.DataFrame(columns=column_names)
         runtimes_df.loc['time'] = runtimes
         runtimes_df.to_csv(os.path.join(subdir, 'times_per_num_clusters.csv'))
-        
 
-def run_approximate_fdr_control(expression_file_path : str, target_file_path : str, grn_file_path : str,
-                                num_permutations : int, num_clusters : int, num_threads : int,
-                                output_path : str):
-    """Computes approximate FDR control for GRNs based on empirical P-value computation.
 
-    Args:
-        expression_file_path (str): Path to input file containig preprocessed expression matrix. Should be
-            tab-separated csv file, with gene symbols as columns.
-        grn (str): Path to dataframe containing edges of to-be-corrected GRN.
-        tf_file_path (str): Path to tsv file containig newline-separated list of TFs as gene symbols.
-        num_permutations (int): Number of permutations to run for empirical P-value computation.
-        num_clusters (int): Number of clusters to cluster genes into and draw representatives from.
-        num_threads (int): How many threads to use for numba-based parallelized computation of 
-            Wasserstein distance matrix.
-    """
-    import os
+def run_approximate_fdr_control(
+        expression_file_path: str,
+        num_permutations: int = 1000,
+        grn_file_path: Union[str, None] = None,  # Either load or infer input GRN
+        target_file_path: Union[str, None] = None,  # Needed if input GRN is to be inferred, if None all genes are viewed as TFs
+        clustering_file_path: Union[str, None] = None,  # Either load precomputed clustering or compute Wasserstein distance matrix and clustering
+        num_clusters: Union[int, None] = None,  # Needed if clustering is to be computed, defaults to 100
+        num_threads: Union[int, None] = None,  # Needed if clustering is to be computed, defaults to 6
+        output_path: Union[str, None] = None,
+) -> None:
+
+    """Computes approximate FDR control for Gene Regulatory Networks (GRNs) based on empirical P-value computation.
+
+
+        Args:
+            expression_file_path (str): Path to the input file containing the preprocessed expression matrix.
+                The file should be a tab-separated CSV with gene symbols as column headers.
+            num_permutations (int): Number of permutations for empirical P-value computation.
+            grn_file_path (Union[str, None]): Path to the input GRN file. If None, the GRN will be inferred.
+            target_file_path (Union[str, None]): Path to a TSV file containing a newline-separated list of target genes.
+                Required if `grn_file_path` is None. If None, all genes are considered as transcription factors (TFs).
+            clustering_file_path (Union[str, None]): Path to a precomputed clustering file.
+                If None, the Wasserstein distance matrix and clustering will be computed.
+            num_clusters (Union[int, None]): Number of clusters for gene grouping. Required if clustering is computed;
+                defaults to 100.
+            num_threads (Union[int, None]): Number of threads for parallel computation of the Wasserstein distance matrix;
+                defaults to 6.
+            output_path (Union[str, None]): Path to save output files. If None, the current working directory is used.
+
+        Outputs:
+            - `distance_matrix.csv`: Wasserstein distance matrix (if clustering is computed).
+            - `clustering.pkl`: Dictionary mapping genes to clusters (if clustering is computed).
+            - `grn_pvalues.csv`: Empirical P-values for the GRN.
+            - `times.csv`: Log of execution times for different steps.
+        """
+
+    import warnings
     import time
-    import numpy as np
     import pandas as pd
     from arboreto.algo import grnboost2
     import pickle
@@ -373,50 +396,70 @@ def run_approximate_fdr_control(expression_file_path : str, target_file_path : s
     from src.distance_matrix import compute_wasserstein_distance_matrix
     from src.clustering import cluster_genes_to_dict
     from src.fdr_calculation import approximate_fdr
-    
+
+    if output_path is None:
+        output_path = os.getcwd()
+
     # Read preprocessed expression matrix and TF list.
     exp_matrix = pd.read_csv(expression_file_path, sep='\t', index_col=0)
-    all_genes = set(exp_matrix.columns.tolist())
-    targets = set(pd.read_csv(target_file_path, index_col=0)['target_gene'].tolist())        
-    tfs = list(all_genes - targets)
-    
-    # Read GRN dataframe.
-    # grn = pd.read_csv(grn_file_path, sep='\t')
-    grn = grnboost2(expression_data=exp_matrix, tf_names=tfs, verbose=True, seed=777)
-    grn.to_csv(output_path + 'input_grn.csv')
-    
-    # Compute Wasserstein distance matrix.
-    print("Computing Wasserstein distance matrix...")
-    dist_start = time.time()
-    dist_mat = compute_wasserstein_distance_matrix(exp_matrix, num_threads)
-    dist_end = time.time()
-    dist_mat.to_csv(output_path + "distance_matrix.csv", sep='\t')
-    print(f'Wasserstein distance matrix computation took {dist_end-dist_start} seconds.')
-    
-    # Cluster genes based on Wasserstein distance.
-    print("Clustering genes...")
-    clust_start = time.time()
-    gene_to_cluster = cluster_genes_to_dict(dist_mat, num_clusters=num_clusters)
-    clust_end = time.time()
-    with open(output_path + "clustering.pkl", 'wb') as f:
-        pickle.dump(gene_to_cluster, f)
-    print(f'Gene clustering took {clust_end-clust_start} seconds.')
-    
+
+    if grn_file_path is None:
+        if target_file_path is None:
+            warnings.warn(
+                "'target_file_path' should not be None if 'grn_file_path' is None. "
+                "Running grn inference with all genes as possible targets"
+            )
+            targets = set()
+        else:
+            targets = set(pd.read_csv(target_file_path, index_col=0)['target_gene'].tolist())
+        all_genes = set(exp_matrix.columns.tolist())
+        tfs = list(all_genes - targets)
+
+        grn = grnboost2(expression_data=exp_matrix, tf_names=tfs, verbose=True, seed=42)
+        grn.to_csv(output_path + 'input_grn.csv')
+    else:
+        # Read GRN dataframe.
+        grn = pd.read_csv(grn_file_path, index_col=0)
+
+    if clustering_file_path is None:
+        # Compute Wasserstein distance matrix.
+        print("Computing Wasserstein distance matrix...")
+        dist_start = time.time()
+        dist_mat = compute_wasserstein_distance_matrix(exp_matrix, num_threads)
+        dist_end = time.time()
+        dist_mat.to_csv(output_path + "distance_matrix.csv", sep='\t')
+        print(f'Wasserstein distance matrix computation took {dist_end-dist_start} seconds.')
+
+        # Cluster genes based on Wasserstein distance.
+        if num_clusters is None:
+            num_clusters = 100
+        print("Clustering genes...")
+        clust_start = time.time()
+        gene_to_cluster = cluster_genes_to_dict(dist_mat, num_clusters=num_clusters)
+        clust_end = time.time()
+        with open(output_path + "clustering.pkl", 'wb') as f:
+            pickle.dump(gene_to_cluster, f)
+        print(f'Gene clustering took {clust_end-clust_start} seconds.')
+    else:
+        with open(clustering_file_path, "rb") as f:
+            gene_to_cluster = pickle.load(f)
+
     # Run approximate empirical P-value computation.
     print("Running approximate FDR control...")
     fdr_start = time.time()
     grn_pvals = approximate_fdr(expression_mat=exp_matrix, grn=grn, gene_to_cluster=gene_to_cluster,
                                 num_permutations=num_permutations)
     fdr_end = time.time()
-    grn_pvals.to_csv(output_path + "grn_pvalues.csv", sep='\t')
+    grn_pvals.to_csv(os.path.join(output_path, 'grn_pvalues.csv'))
     print(f'Approximate FDR control took {fdr_end-fdr_start} seconds.')
-    
+
     logger = pd.DataFrame()
-    logger['distance_mat'] = [dist_end-dist_start]
-    logger['clustering'] = [clust_end-clust_start]
+    if clustering_file_path is None:
+        logger['distance_mat'] = [dist_end-dist_start]
+        logger['clustering'] = [clust_end-clust_start]
     logger['fdr'] = [fdr_end-fdr_start]
-    logger.to_csv(output_path + 'logger.csv')
-    
+    logger.to_csv(os.path.join(output_path, 'times.csv'))
+
 
 if __name__ == '__main__':
 
@@ -450,27 +493,42 @@ if __name__ == '__main__':
     elif plot_clust_metrics:
         from src.postprocessing import plot_cluster_metrics
         root_dir = os.path.join(os.getcwd(), 'data/gtex_tissues_preprocessed')
+        num_clusters_list = list(range(100, 5001, 100))
         plot_cluster_metrics(
         file_path=root_dir,
-        num_clusters=list(range(100, 5001, 100)),
+        num_clusters=num_clusters_list,
         )
 
     elif fdr:
-        # ### Run approximate FDR control for one tissue
-        # Adjust paths (orig. GTEX data path: /data/bionets/datasets/gtex/<tissue>)
-        # TF file URL: https://resources.aertslab.org/cistarget/tf_lists/
-        expression_file_path = "/data/bionets/xa39zypy/gtex/Prostate/Prostate.tsv"
-        # tf_file_path = "/data/bionets/xa39zypy/GTEX/allTFs_hg38.txt"
-        target_file_path = "/data/bionets/xa39zypy/gtex/Prostate/Prostate_target_genes.tsv"
-        grn_file_path = ""
-        num_permutations = 1
-        n_clusters = 100
-        num_threads = 32
-        output_path = "/data/bionets/xa39zypy/GRN-FinDeR/data/Prostate/"
-        run_approximate_fdr_control(expression_file_path, target_file_path, grn_file_path,
-                                    num_permutations, n_clusters, num_threads, output_path)
+        # ### Run approximate FDR control for Adipose_Tissue
+        root_dir = os.path.join(os.getcwd(), 'data/gtex_tissues_preprocessed/Adipose_Tissue')
+        expr_fp = os.path.join(root_dir, 'Adipose_Tissue.tsv')
+        grn_fp = os.path.join(root_dir, 'input_grn.csv')
+
+        n_permut = 1000
+        n_clusters = [100, 200, 300, 400, 500, 600]
+
+        for n in n_clusters:
+
+            print(f'# ### Approximate FDR for {n} clusters ...')
+
+            clust_fp = os.path.join(root_dir, 'clusterings', f'clustering_{n}.pkl')
+
+            out_p = os.path.join(root_dir, 'approx_fdr_control', f'npermut{n_permut}_nclust{n}')
+            os.makedirs(out_p, exist_ok=True)
+
+            run_approximate_fdr_control(
+                expression_file_path=expr_fp,
+                num_permutations=n_permut,
+                grn_file_path=grn_fp,
+                target_file_path=None,
+                clustering_file_path=clust_fp,
+                num_clusters=None,
+                num_threads=None,
+                output_path=out_p,
+            )
 
     else:
         pass
-    
+
     print("done")
