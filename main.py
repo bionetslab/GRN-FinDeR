@@ -495,8 +495,9 @@ if __name__ == '__main__':
         root_dir = os.path.join(os.getcwd(), 'data/gtex_tissues_preprocessed')
         num_clusters_list = list(range(100, 5001, 100))
         plot_cluster_metrics(
-        file_path=root_dir,
-        num_clusters=num_clusters_list,
+            file_path=root_dir,
+            num_clusters=num_clusters_list,
+            plt_umap=True,
         )
 
     elif fdr:
