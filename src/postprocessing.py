@@ -2,9 +2,8 @@ import pickle
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
-import scanpy as sc
 
-from typing import Dict, Union
+from umap import UMAP
 
 
 def plot_cluster_metrics(file_path : str, num_clusters : list[int], plt_umap: bool = False):
@@ -102,19 +101,25 @@ def plot_cluster_metrics(file_path : str, num_clusters : list[int], plt_umap: bo
             # Create directory for saving plots
             subdir_umaps = os.path.join(subdir_metrics, 'umaps')
             os.makedirs(subdir_umaps, exist_ok=True)
+
             # Load expression matrix
-            expression_file = f'{tissue}.tsv'
-            expression_df = pd.read_csv(os.path.join(subdir, expression_file), sep='\t', index_col=0)
+            # expression_file = f'{tissue}.tsv'
+            # expression_df = pd.read_csv(os.path.join(subdir, expression_file), sep='\t', index_col=0)
+
+            # Load distance matrix.
+            distance_file = os.path.join(subdir, 'distance_matrix.csv')
+            distance_df = pd.read_csv(distance_file, index_col=0)
+            distance_df.index = distance_df.columns
 
             # Create Anndata object for plotting
-            expression_mat = expression_df.to_numpy().T
-            adata = sc.AnnData(X=expression_mat)
-            adata.obs_names = expression_df.columns.to_numpy().copy()
+            # expression_mat = expression_df.to_numpy().T
+            # adata = sc.AnnData(X=expression_mat)
+            # adata.obs_names = expression_df.columns.to_numpy().copy()
 
             # Compute Umap
             print('# ### Computing UMAP ...')
-            sc.pp.neighbors(adata)
-            sc.tl.umap(adata)
+            umap_reducer = UMAP(metric='precomputed')
+            umap_embedding = umap_reducer.fit_transform(distance_df.to_numpy())
 
             print('# ### Plotting UMAPs ...')
             for n in num_clusters:
@@ -124,11 +129,25 @@ def plot_cluster_metrics(file_path : str, num_clusters : list[int], plt_umap: bo
                     gene_to_cluster = pickle.load(handle)
 
                 # Annotate with cluster ids
-                cluster_ids = [gene_to_cluster[gene] for gene in expression_df.columns.to_numpy()]
-                adata.obs['cluster_id'] = cluster_ids
+                cluster_ids = [gene_to_cluster[gene] for gene in distance_df.columns.to_numpy()]
 
-                # Plot
-                sc.pl.umap(adata=adata, color='cluster_id', color_map='nipy_spectral')
+                # Plot Umap
+                fig, ax = plt.subplots(dpi=dpi)
+                sc_plot = ax.scatter(
+                    umap_embedding[:, 0],
+                    umap_embedding[:, 1],
+                    c=cluster_ids,
+                    cmap='gist_ncar',
+                    alpha=0.8,
+                    edgecolors='none',
+                    s=120000 / (umap_embedding.shape[0] * 2),
+                )
+                cbar = fig.colorbar(sc_plot, ax=ax)
+                cbar.set_label('Cluster ID', fontsize=12)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                ax.set_xlabel('Umap 1', fontsize=12)
+                ax.set_ylabel('Umap 2', fontsize=12)
                 plt.savefig(os.path.join(subdir_umaps, f'umap_n_clusters_{n}.png'), dpi=dpi)
-                plt.close('all')
+                plt.close(fig)
 
