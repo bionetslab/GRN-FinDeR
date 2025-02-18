@@ -463,6 +463,8 @@ def run_approximate_fdr_control(
 
 if __name__ == '__main__':
 
+    # For GRNboost2 use: pip install dask-expr==0.5.3 distributed==2024.2.1
+
     import os
 
     generate_fdr_control_input = False
