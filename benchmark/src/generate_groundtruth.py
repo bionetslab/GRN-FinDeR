@@ -20,20 +20,22 @@ from codecarbon import OfflineEmissionsTracker
 from preprocess_gtex import create_GTEX_data, read_tf_list
 
 
-def compute_and_save_network(data, tf_list, client, file, use_tf=False, n_permutations = 1000, output_dir = '/tmp/grnboost2'):
+def compute_and_save_network(data, tf_list, client, file, use_tf=False, n_permutations = 1000, output_dir = '/tmp/grnboost2', bootstrap_fdr_fraction = 1.0):
     print('Computing network')
     # compute the GRN
     if not use_tf:
         network = grnboost2(expression_data=data,
                             client_or_address=client,
                             n_permutations = n_permutations,
-                            output_directory = output_dir)
+                            output_directory = output_dir,
+                            bootstrap_fdr_fraction = bootstrap_fdr_fraction)
     else:
         network = grnboost2(expression_data=data,
                             tf_names=tf_list,
                             client_or_address=client,
                             n_permutations = n_permutations,
-                            output_directory = output_dir)
+                            output_directory = output_dir,
+                            bootstrap_fdr_fraction = bootstrap_fdr_fraction)
 
     # write the GRN to file
     network.to_csv(file, sep='\t', index=False, header=False)
@@ -49,7 +51,7 @@ def inference_pipeline_GTEX(config):
     ## RUN INFERENCE for transcript based network
     tissue_string = config['tissue'].replace(' ', '_')
     results_dir = op.join(config['results_dir'], tissue_string)
-    results_dir_grn = op.join(results_dir, 'grn')
+    results_dir_grn = op.join(results_dir, config['subnetwork_dir'])
     os.makedirs(results_dir_grn, exist_ok=True)
 
 
@@ -78,6 +80,13 @@ def inference_pipeline_GTEX(config):
     else:
         grn_temp_dir = results_dir_grn
 
+    if config['bootstrap']:
+        # Bootstrap is set to a target number of samples, need to compute required percentage
+        # Make sure it is between 2 and 100 percent.
+        bootstrap_percentage = np.max(np.min(1.0, np.floor(config['bootstrap_size']/data_gex.shape[0], decimals = 2)), 0.02)
+    else:
+        bootstrap_percentage = 1.0
+
     file_gene = op.join(results_dir, f"{tissue_string}_gene_tf.network.tsv")
     network = compute_and_save_network(data_gex,
                                     tf_list['Gene stable ID'].unique().tolist(),
@@ -85,7 +94,8 @@ def inference_pipeline_GTEX(config):
                                     file_gene,
                                     use_tf=True, 
                                     output_dir = grn_temp_dir,
-                                    n_permutations=config['fdr_samples'])
+                                    n_permutations=config['fdr_samples'],
+                                    bootstrap_fdr_fraction= bootstrap_percentage)
 
     
 

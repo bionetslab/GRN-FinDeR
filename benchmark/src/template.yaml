@@ -10,3 +10,4 @@ tf_list: /home/woody/iwbn/iwbn006h/alternet/data/allTFs_hg38.txt
 tissue: Lung
 standardize_data: true
 temp_dir: $TMPDIR 
+subnetwork_dir: 'grn'
