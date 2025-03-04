@@ -31,7 +31,7 @@ def approximate_fdr(expression_mat : pd.DataFrame,
 
     # Create dict from original GRN {('TF', 'target'): ('importance', 'counter')}
     grn_zipped = zip(grn['TF'].to_list(), grn['target'].to_list(), grn['importance'].to_list())
-    grn_dict = {(tf, target): (importance, 0.0) for tf, target, importance in grn_zipped}
+    grn_dict = {(tf, target): (importance, 0.0, 0.0) for tf, target, importance in grn_zipped}
     
     # Init data structure for counting between and withing cluster empirical counts.
     cluster_cluster_counts = {cluster_edge : 0.0 for cluster_edge in itertools.product(cluster_to_gene.keys(), repeat=2)}
@@ -71,14 +71,15 @@ def approximate_fdr(expression_mat : pd.DataFrame,
     for key in grn_dict.keys():
         cluster_tuple = (gene_to_cluster[key[0]], gene_to_cluster[key[1]])
         p_value = (cluster_cluster_counts[cluster_tuple]+1) / (num_permutations+1)
-        grn_dict[key] = (grn_dict[key][0], p_value)
+        grn_dict[key] = (grn_dict[key][0], cluster_cluster_counts[cluster_tuple], p_value)
     
-    grn_transposed = {'tf': [], 'target' : [], 'importance' : [], 'pvalue': []}
+    grn_transposed = {'tf': [], 'target' : [], 'importance' : [], 'count': [], 'pvalue': []}
     for key, val in grn_dict.items():
         grn_transposed['tf'].append(key[0])
         grn_transposed['target'].append(key[1])
         grn_transposed['importance'].append(val[0])
-        grn_transposed['pvalue'].append(val[1])
+        grn_transposed['count'].append(val[1])
+        grn_transposed['pvalue'].append(val[2])
     
     grn_df = pd.DataFrame.from_dict(grn_transposed)
     return grn_df
