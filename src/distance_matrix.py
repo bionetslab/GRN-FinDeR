@@ -22,7 +22,8 @@ def _merge_sorted_arrays(a, b):
 
 @njit(nopython=True, parallel=True, nogil=True)
 def _pairwise_wasserstein_dists(sorted_matrix, num_threads):
-    set_num_threads(num_threads)
+    if num_threads != -1:
+        set_num_threads(num_threads)
     num_cols = sorted_matrix.shape[1]
     num_rows = sorted_matrix.shape[0]
     distance_mat = np.zeros((num_cols, num_cols))
@@ -45,7 +46,7 @@ def _pairwise_wasserstein_dists(sorted_matrix, num_threads):
     return distance_mat
 
 
-def compute_wasserstein_distance_matrix(expression_mat : pd.DataFrame, num_threads: int = 1):
+def compute_wasserstein_distance_matrix(expression_mat : pd.DataFrame, num_threads: int = -1):
     numpy_mat = expression_mat.to_numpy()
     numpy_mat = np.sort(numpy_mat, axis=0)
     distance_mat = _pairwise_wasserstein_dists(numpy_mat, num_threads)
