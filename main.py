@@ -461,6 +461,106 @@ def run_approximate_fdr_control(
     logger.to_csv(os.path.join(output_path, 'times.csv'))
 
 
+def approximate_fdr_validation(
+        root_directory: str,
+        num_clusters: list[int],
+        num_permutations: int = 1000,
+        verbosity: int = 0
+):
+    import pickle
+    import time
+    import os
+    import warnings
+    import pandas as pd
+    from src.distance_matrix import compute_wasserstein_distance_matrix
+    from src.clustering import cluster_genes_to_dict
+    from src.fdr_calculation import approximate_fdr
+
+    # Get subdirectories with expression and ground truth grn data for all tissues
+    subdirectories = [
+        os.path.join(root_directory, d) for d in os.listdir(root_directory)
+        if os.path.isdir(os.path.join(root_directory, d))
+    ]
+    tissues = [str(d) for d in os.listdir(root_directory) if os.path.isdir(os.path.join(root_directory, d))]
+
+    # Iterate over tissues
+    for tissue, subdir in zip(tissues, subdirectories):
+
+        if verbosity > 0:
+            print(f'# ###### Processing tissue {tissue}...')
+
+        # Load GRN to-be-pruned.
+        grn_file = os.path.join(subdir, 'fdr_grn.tsv')
+        try:
+            original_grn = pd.read_csv(grn_file, sep='\t')
+        except FileNotFoundError:
+            warnings.warn(f'Ground truth GRN for tissue {tissue} not found. Continue.', UserWarning)
+            continue
+
+        # Load expression matrix
+        expression_file = f'{tissue}.tsv'
+        expression_mat = pd.read_csv(os.path.join(subdir, expression_file), sep='\t', index_col=0)
+
+        # Compute and save distance matrix
+        if verbosity > 0:
+            print('# ### Computing Wasserstein distance matrix...')
+        distance_mat_st = time.time()
+        distance_mat = compute_wasserstein_distance_matrix(expression_mat=expression_mat, num_threads=-1)
+        distance_mat_et = time.time()
+        distance_mat_time = distance_mat_et - distance_mat_st
+        distance_mat.to_csv(os.path.join(subdir, 'distance_matrix.csv'))
+        if verbosity > 0:
+            print(f'# ### Wasserstein distance matrix computation took {distance_mat_time} seconds.')
+
+        # Compute clusterings and approximate fdr
+        runtimes_idx = ['distance_matrix', ]
+        runtimes = [distance_mat_time, ]
+        for n in num_clusters:
+
+            # Compute and save clustering
+            if verbosity:
+                print(f'# ### Computing clustering, n = {n} ...')
+            gene_to_clust_st = time.time()
+            gene_to_clust = cluster_genes_to_dict(distance_matrix=distance_mat, num_clusters=n)
+            gene_to_clust_et = time.time()
+            gene_to_clust_time = gene_to_clust_et - gene_to_clust_st
+            runtimes_idx.append(f'clustering_{n}')
+            runtimes.append(gene_to_clust_time)
+            if verbosity > 0:
+                print(f'# ### Clustering took {gene_to_clust_time} seconds.')
+
+            with open(os.path.join(subdir, f'clustering_{n}.pkl'), 'wb') as f:
+                pickle.dump(gene_to_clust, f)
+
+            if verbosity > 0:
+                print(f'# ### Approximate FDR, n = {n} ...')
+            fdr_st = time.time()
+            dummy_grn = approximate_fdr(
+                expression_mat=expression_mat,
+                grn=original_grn,
+                gene_to_cluster=gene_to_clust,
+                num_permutations=num_permutations
+            )
+            fdr_et = time.time()
+            fdr_time = fdr_et - fdr_st
+            runtimes_idx.append(f'fdr_{n}')
+            runtimes.append(fdr_time)
+            if verbosity > 0:
+                print(f'# ### Approximate FDR computation took {fdr_time} seconds.')
+
+            original_grn[f'count_{n}'] = dummy_grn['count'].to_numpy()
+            original_grn[f'pvalue_{n}'] = dummy_grn['pvalue'].to_numpy()
+
+        runtimes_df = pd.DataFrame(index=runtimes_idx)
+        runtimes_df['runtimes'] = runtimes
+
+        runtimes_df.to_csv(os.path.join(subdir, 'runtimes.csv'))
+
+        original_grn.to_csv(os.path.join(subdir, 'grn.csv'))
+
+
+
+
 if __name__ == '__main__':
 
     # For GRNboost2 use: pip install dask-expr==0.5.3 distributed==2024.2.1
@@ -469,7 +569,7 @@ if __name__ == '__main__':
 
     generate_fdr_control_input = False
     cluster_metrics = False
-    plot_clust_metrics = True
+    plot_clust_metrics = False
     fdr = False
 
     if generate_fdr_control_input:
@@ -535,3 +635,9 @@ if __name__ == '__main__':
         pass
 
     print("done")
+
+
+
+
+
+
