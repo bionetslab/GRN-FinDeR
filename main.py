@@ -632,7 +632,14 @@ if __name__ == '__main__':
             )
 
     else:
-        pass
+        root_directory  = os.getcwd()
+        num_clusters = list(range(100, 5001, 100))
+
+        approximate_fdr_validation(
+            root_directory=root_directory,
+            num_clusters=num_clusters,
+            verbosity=1,
+        )
 
     print("done")
 
