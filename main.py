@@ -571,6 +571,7 @@ if __name__ == '__main__':
     cluster_metrics = False
     plot_clust_metrics = False
     fdr = False
+    mwe = True
 
     if generate_fdr_control_input:
         # ### Compute input to FDR control for all tissues (GRN, distance matrix, clustering)
@@ -630,6 +631,8 @@ if __name__ == '__main__':
                 num_threads=None,
                 output_path=out_p,
             )
+    if mwe:
+        example_workflow()
 
     else:
         root_directory  = os.getcwd()
