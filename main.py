@@ -550,8 +550,14 @@ def approximate_fdr_validation(
             if verbosity > 0:
                 print(f'# ### Clustering took {gene_to_clust_time} seconds.')
 
-            with open(os.path.join(subdir, f'clustering_{n}.pkl'), 'wb') as f:
-                pickle.dump(gene_to_clust, f)
+            if include_tfs:
+                with open(os.path.join(subdir, f'tf_clustering_{n}.pkl'), 'wb') as f:
+                    pickle.dump(tfs_to_clust, f)
+                with open(os.path.join(subdir, f'gene_clustering_{n}.pkl'), 'wb') as f:
+                    pickle.dump(genes_to_clust, f)
+            else:
+                with open(os.path.join(subdir, f'clustering_{n}.pkl'), 'wb') as f:
+                    pickle.dump(gene_to_clust, f)
 
             if verbosity > 0:
                 print(f'# ### Approximate FDR, n = {n} ...')
