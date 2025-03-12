@@ -469,6 +469,7 @@ def run_approximate_fdr_control(
 def approximate_fdr_validation(
         root_directory: str,
         num_clusters: list[int],
+        include_tfs : bool = False,
         num_permutations: int = 1000,
         verbosity: int = 0
 ):
@@ -505,6 +506,12 @@ def approximate_fdr_validation(
         # Load expression matrix
         expression_file = f'{tissue}.tsv'
         expression_mat = pd.read_csv(os.path.join(subdir, expression_file), sep='\t', index_col=0)
+        
+        # Load target genes file.
+        if include_tfs:
+            target_file = f'{tissue}_target_genes.tsv'
+            target_df = pd.read_csv(target_file, index_col=0)
+            tf_list = set(expression_mat.columns) - set(target_df['target_gene'])
 
         # Compute and save distance matrix
         if verbosity > 0:
@@ -526,7 +533,16 @@ def approximate_fdr_validation(
             if verbosity:
                 print(f'# ### Computing clustering, n = {n} ...')
             gene_to_clust_st = time.time()
-            gene_to_clust = cluster_genes_to_dict(distance_matrix=distance_mat, num_clusters=n)
+            # Check whether to separately cluster TFs.
+            if include_tfs:
+                tf_bool = [True if gene in tf_list else False for gene in distance_mat.columns]
+                gene_bool = [False if gene in tf_list else True for gene in distance_mat.columns]
+                dist_mat_tfs = distance_mat.loc[tf_bool, tf_bool]
+                dist_mat_genes = distance_mat.loc[gene_bool, gene_bool]
+                tfs_to_clust = cluster_genes_to_dict(distance_matrix=dist_mat_tfs, num_clusters=n)
+                genes_to_clust = cluster_genes_to_dict(distance_matrix=dist_mat_genes, num_clusters=n)
+            else:
+                gene_to_clust = cluster_genes_to_dict(distance_matrix=distance_mat, num_clusters=n)
             gene_to_clust_et = time.time()
             gene_to_clust_time = gene_to_clust_et - gene_to_clust_st
             runtimes_idx.append(f'clustering_{n}')
@@ -540,12 +556,20 @@ def approximate_fdr_validation(
             if verbosity > 0:
                 print(f'# ### Approximate FDR, n = {n} ...')
             fdr_st = time.time()
-            dummy_grn = approximate_fdr(
-                expression_mat=expression_mat,
-                grn=original_grn,
-                gene_to_cluster=gene_to_clust,
-                num_permutations=num_permutations
-            )
+            
+            if include_tfs:
+                dummy_grn = approximate_fdr(
+                    expression_mat=expression_mat,
+                    grn=original_grn,
+                    gene_to_cluster=(tfs_to_clust, genes_to_clust),
+                    num_permutations=num_permutations)
+            else:
+                dummy_grn = approximate_fdr(
+                    expression_mat=expression_mat,
+                    grn=original_grn,
+                    gene_to_cluster=gene_to_clust,
+                    num_permutations=num_permutations
+                )
             fdr_et = time.time()
             fdr_time = fdr_et - fdr_st
             runtimes_idx.append(f'fdr_{n}')
@@ -707,11 +731,13 @@ if __name__ == '__main__':
     
     else:
         root_directory  = "/home/woody/iwbn/iwbn106h/gtex"
-        num_clusters = [100, 300]
+        num_clusters = list(range(100, 1001, 100))
 
         approximate_fdr_validation(
             root_directory=root_directory,
             num_clusters=num_clusters,
+            include_tfs=True,
+            num_permutations=1000,
             verbosity=1,
         )
 
