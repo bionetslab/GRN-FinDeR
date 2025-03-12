@@ -140,7 +140,7 @@ def example_workflow():
 
     print(grn)
 
-    dist_mat = compute_wasserstein_distance_matrix(expr_matrix, 4)
+    dist_mat = compute_wasserstein_distance_matrix(expr_matrix, -1)
 
     print(dist_mat)
 
@@ -551,14 +551,72 @@ def approximate_fdr_validation(
             original_grn[f'count_{n}'] = dummy_grn['count'].to_numpy()
             original_grn[f'pvalue_{n}'] = dummy_grn['pvalue'].to_numpy()
 
-        runtimes_df = pd.DataFrame(index=runtimes_idx)
-        runtimes_df['runtimes'] = runtimes
+            runtimes_df = pd.DataFrame(index=runtimes_idx)
+            runtimes_df['runtimes'] = runtimes
 
-        runtimes_df.to_csv(os.path.join(subdir, 'runtimes.csv'))
+            runtimes_df.to_csv(os.path.join(subdir, 'runtimes.csv'))
 
-        original_grn.to_csv(os.path.join(subdir, 'grn.csv'))
+            original_grn.to_csv(os.path.join(subdir, 'grn.csv'))
 
+def assess_approximation_quality(
+        root_directory: str,
+        num_clusters: list[int],
+        num_permutations: int = 1000,
+        filter_tissues : list[str] = []
+):
+    import os
+    import pandas as pd
+    from sklearn.metrics import mean_squared_error, accuracy_score, hamming_loss, f1_score
 
+    # Get subdirectories with expression and ground truth grn data for all tissues
+    subdirectories = [
+        os.path.join(root_directory, d) for d in os.listdir(root_directory)
+        if os.path.isdir(os.path.join(root_directory, d))
+    ]
+    tissues = [str(d) for d in os.listdir(root_directory) if os.path.isdir(os.path.join(root_directory, d))]
+
+    # Iterate over tissues
+    for tissue, subdir in zip(tissues, subdirectories):
+
+        if len(filter_tissues)>0 and (not tissue in filter_tissues):
+            # Ignore current tissue subdirectory.
+            continue 
+        
+        print(f'Processing tissue {tissue}...')
+        # Load approximate Pvalues and counts.
+        grn_file = os.path.join(subdir, 'grn.csv')
+        grn = pd.read_csv(grn_file, index_col=0)
+        
+        results_dict = dict()
+        for clusters in num_clusters:
+            # Compute MSE between groundtruth counts and respective approx. counts.
+            gt_counts = grn['counter'].to_list()
+            approx_counts = grn[f'count_{clusters}'].to_list()
+            mse_counts = mean_squared_error(gt_counts, approx_counts)
+            # Threshold empirical Pvalues and compute respective metrics.
+            gt_pvals = [(1.0+count)/(1.0+num_permutations) for count in gt_counts]
+            approx_pvals = [(1.0+count)/(1.0+num_permutations) for count in approx_counts]
+            gt_signif_005 = [1 if pval <= 0.05 else 0 for pval in gt_pvals]
+            approx_signif_005 = [1 if pval <= 0.05 else 0 for pval in approx_pvals]
+            gt_signif_001 = [1 if pval <= 0.01 else 0 for pval in gt_pvals]
+            approx_signif_001 = [1 if pval <= 0.01 else 0 for pval in approx_pvals]
+            # Compute approximation metrics.
+            accuracy_pvals_005 = accuracy_score(gt_signif_005, approx_signif_005)
+            hamming_pvals_005 = hamming_loss(gt_signif_005, approx_signif_005)
+            f1_pvals_005 = f1_score(gt_signif_005, approx_signif_005)
+            accuracy_pvals_001 = accuracy_score(gt_signif_001, approx_signif_001)
+            hamming_pvals_001 = hamming_loss(gt_signif_001, approx_signif_001)
+            f1_pvals_001 = f1_score(gt_signif_001, approx_signif_001)
+            results_dict[f'clusters_{clusters}'] = [mse_counts, hamming_pvals_005, hamming_pvals_001,
+                                                    accuracy_pvals_005, accuracy_pvals_001,
+                                                    f1_pvals_005, f1_pvals_001]
+        
+        results_df = pd.DataFrame(results_dict)
+        results_df.index = ['mse_counts', 'hamming_pvals005', 'hamming_pvals001', 
+                            'accuracy_pvals005', 'accuracy_pvals001', 'f1_pvals005',
+                            'f1_pvals001']
+        results_df.to_csv(os.path.join(subdir, 'approx_results.csv'), index=True)
+            
 
 
 if __name__ == '__main__':
@@ -571,7 +629,8 @@ if __name__ == '__main__':
     cluster_metrics = False
     plot_clust_metrics = False
     fdr = False
-    mwe = True
+    mwe = False
+    approx_quality = False
 
     if generate_fdr_control_input:
         # ### Compute input to FDR control for all tissues (GRN, distance matrix, clustering)
@@ -634,9 +693,16 @@ if __name__ == '__main__':
     if mwe:
         example_workflow()
 
+    elif approx_quality:
+        assess_approximation_quality(
+        root_directory="/home/woody/iwbn/iwbn106h/gtex",
+        num_clusters=[700],
+        num_permutations=1000,
+        filter_tissues=["Adipose_Tissue"])
+    
     else:
-        root_directory  = os.getcwd()
-        num_clusters = list(range(100, 5001, 100))
+        root_directory  = "/home/woody/iwbn/iwbn106h/gtex"
+        num_clusters = [100, 300]
 
         approximate_fdr_validation(
             root_directory=root_directory,
