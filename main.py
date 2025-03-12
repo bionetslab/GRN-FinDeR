@@ -142,16 +142,18 @@ def example_workflow():
     # print(dist_mat_all)
 
     tf_bool = [True if gene in tfs else False for gene in dist_mat_all.columns]
+    gene_bool = [False if gene in tfs else True for gene in dist_mat_all.columns]
     dist_mat_tfs = dist_mat_all.loc[tf_bool, tf_bool]
+    dist_mat_genes = dist_mat_all.loc[gene_bool, gene_bool]
 
-    gene_to_clust = cluster_genes_to_dict(dist_mat_all, num_clusters=3)
+    gene_to_clust = cluster_genes_to_dict(dist_mat_genes, num_clusters=3)
     # print(gene_to_clust)
 
     tf_to_clust = cluster_genes_to_dict(dist_mat_tfs, num_clusters=3)
     # print(tf_to_clust)
 
     grn_w_pvals = approximate_fdr(
-        expression_mat=expr_matrix, grn=grn, gene_to_cluster=(gene_to_clust, tf_to_clust), num_permutations=2)
+        expression_mat=expr_matrix, grn=grn, gene_to_cluster=(tf_to_clust, gene_to_clust), num_permutations=2)
 
     print(grn_w_pvals)
 

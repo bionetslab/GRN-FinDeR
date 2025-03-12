@@ -40,12 +40,21 @@ def approximate_fdr(expression_mat : pd.DataFrame,
                                             num_permutations)
     return fdr_grn
 
+def merge_clusterings(tf_to_cluster : dict, gene_to_cluster : dict):
+    tf_to_cluster = tf_to_cluster.copy()
+    num_tf_categories = max(tf_to_cluster.values())+1
+    gene_to_cluster_updated = {gene : cluster+num_tf_categories for gene, cluster in gene_to_cluster.items()}
+    tf_to_cluster.update(gene_to_cluster_updated)
+    return tf_to_cluster
+
 def _approximate_fdr_with_tfs(expression_mat : pd.DataFrame,
                               grn : pd.DataFrame,
-                              target_to_cluster : dict,
                               tf_to_cluster : dict,
+                              gene_to_cluster : dict,
                               num_permutations : int = 1000):
+    target_to_cluster = merge_clusterings(tf_to_cluster, gene_to_cluster)
     cluster_to_target = _invert_gene_cluster_dictionary(target_to_cluster)
+    cluster_to_gene = _invert_gene_cluster_dictionary(gene_to_cluster)
     cluster_to_tf = _invert_gene_cluster_dictionary(tf_to_cluster)
     
     # Create dict representation from CSV input.
@@ -55,17 +64,17 @@ def _approximate_fdr_with_tfs(expression_mat : pd.DataFrame,
     # Edge count structure on cluster level with structure {(TFclusterID, TargetclusterID) : count}.
     cluster_cluster_counts = {
         cluster_edge : 0.0 for cluster_edge in itertools.product(
-            list(cluster_to_target.keys()),
-            list(cluster_to_tf.keys())
+            list(cluster_to_tf.keys()),
+            list(cluster_to_target.keys())
             )
         }
     
     for i in range(num_permutations):
         # Sample representatives from each cluster.
         tf_representatives = _draw_representatives(cluster_to_tf, 1)
-        target_representatives = _draw_representatives(cluster_to_target, 1)
+        gene_representatives = _draw_representatives(cluster_to_gene, 1)
         
-        joint_representatives = list(set(tf_representatives + target_representatives))
+        joint_representatives = list(set(tf_representatives + gene_representatives))
         represent_expression = expression_mat[joint_representatives].copy()
         # Shuffle expression matrix.
         represent_permuted = represent_expression.sample(frac=1, axis=1)
@@ -77,7 +86,7 @@ def _approximate_fdr_with_tfs(expression_mat : pd.DataFrame,
                 count_value = int(factor >= grn_dict[(tf, target)][0])
                 # Update corresponding cluster counts.
                 cluster_cluster_counts[(tf_to_cluster[tf], target_to_cluster[target])] += count_value
-    
+
     # Map cluster-cluster Pvalues into original genes.
     for key in grn_dict.keys():
         cluster_tuple = (tf_to_cluster[key[0]], target_to_cluster[key[1]])
