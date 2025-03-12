@@ -133,22 +133,25 @@ def example_workflow():
         np.random.poisson(lam=np.random.gamma(shape=2, scale=1, size=(n_cells, n_tfs + n_genes))),
         columns=tfs + genes,
     )
-
-    print(expr_matrix)
+    # print(expr_matrix)
 
     grn = grnboost2(expression_data=expr_matrix, tf_names=tfs, verbose=True, seed=777)
+    # print(grn)
 
-    print(grn)
+    dist_mat_all = compute_wasserstein_distance_matrix(expr_matrix, -1)
+    # print(dist_mat_all)
 
-    dist_mat = compute_wasserstein_distance_matrix(expr_matrix, -1)
+    tf_bool = [True if gene in tfs else False for gene in dist_mat_all.columns]
+    dist_mat_tfs = dist_mat_all.loc[tf_bool, tf_bool]
 
-    print(dist_mat)
+    gene_to_clust = cluster_genes_to_dict(dist_mat_all, num_clusters=3)
+    # print(gene_to_clust)
 
-    gene_to_clust = cluster_genes_to_dict(dist_mat, num_clusters=3)
-    print(gene_to_clust)
+    tf_to_clust = cluster_genes_to_dict(dist_mat_tfs, num_clusters=3)
+    # print(tf_to_clust)
 
     grn_w_pvals = approximate_fdr(
-        expression_mat=expr_matrix, grn=grn, gene_to_cluster=gene_to_clust, num_permutations=2)
+        expression_mat=expr_matrix, grn=grn, gene_to_cluster=(gene_to_clust, tf_to_clust), num_permutations=2)
 
     print(grn_w_pvals)
 
@@ -629,7 +632,7 @@ if __name__ == '__main__':
     cluster_metrics = False
     plot_clust_metrics = False
     fdr = False
-    mwe = False
+    mwe = True
     approx_quality = False
 
     if generate_fdr_control_input:
