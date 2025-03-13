@@ -510,7 +510,7 @@ def approximate_fdr_validation(
         # Load target genes file.
         if include_tfs:
             target_file = f'{tissue}_target_genes.tsv'
-            target_df = pd.read_csv(target_file, index_col=0)
+            target_df = pd.read_csv(os.path.join(subdir, target_file), index_col=0)
             tf_list = set(expression_mat.columns) - set(target_df['target_gene'])
 
         # Compute and save distance matrix
@@ -601,7 +601,9 @@ def assess_approximation_quality(
 ):
     import os
     import pandas as pd
-    from sklearn.metrics import mean_squared_error, accuracy_score, hamming_loss, f1_score
+    from sklearn.metrics import (
+        mean_squared_error, accuracy_score, hamming_loss, f1_score, precision_score, recall_score
+    )
 
     # Get subdirectories with expression and ground truth grn data for all tissues
     subdirectories = [
@@ -639,17 +641,26 @@ def assess_approximation_quality(
             accuracy_pvals_005 = accuracy_score(gt_signif_005, approx_signif_005)
             hamming_pvals_005 = hamming_loss(gt_signif_005, approx_signif_005)
             f1_pvals_005 = f1_score(gt_signif_005, approx_signif_005)
+            prec_pvals_005 = precision_score(gt_signif_005, approx_signif_005)
+            rec_pvals_005 = recall_score(gt_signif_005, approx_signif_005)
+
             accuracy_pvals_001 = accuracy_score(gt_signif_001, approx_signif_001)
             hamming_pvals_001 = hamming_loss(gt_signif_001, approx_signif_001)
             f1_pvals_001 = f1_score(gt_signif_001, approx_signif_001)
-            results_dict[f'clusters_{clusters}'] = [mse_counts, hamming_pvals_005, hamming_pvals_001,
-                                                    accuracy_pvals_005, accuracy_pvals_001,
-                                                    f1_pvals_005, f1_pvals_001]
+            prec_pvals_001 = precision_score(gt_signif_001, approx_signif_001)
+            rec_pvals_001 = recall_score(gt_signif_001, approx_signif_001)
+
+            results_dict[f'clusters_{clusters}'] = [
+                mse_counts, hamming_pvals_005, hamming_pvals_001, accuracy_pvals_005, accuracy_pvals_001, f1_pvals_005,
+                f1_pvals_001, prec_pvals_005, prec_pvals_001, rec_pvals_001, rec_pvals_005
+            ]
         
         results_df = pd.DataFrame(results_dict)
-        results_df.index = ['mse_counts', 'hamming_pvals005', 'hamming_pvals001', 
-                            'accuracy_pvals005', 'accuracy_pvals001', 'f1_pvals005',
-                            'f1_pvals001']
+        results_df.index = [
+            'mse_counts', 'hamming_pvals005', 'hamming_pvals001', 'accuracy_pvals005', 'accuracy_pvals001',
+            'f1_pvals005', 'f1_pvals001', 'prec_pvals001', 'prec_pvals005', 'rec_pvals001', 'prec_pvals005'
+        ]
+
         results_df.to_csv(os.path.join(subdir, 'approx_results.csv'), index=True)
             
 
