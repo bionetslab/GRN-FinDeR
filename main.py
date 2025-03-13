@@ -652,13 +652,13 @@ def assess_approximation_quality(
 
             results_dict[f'clusters_{clusters}'] = [
                 mse_counts, hamming_pvals_005, hamming_pvals_001, accuracy_pvals_005, accuracy_pvals_001, f1_pvals_005,
-                f1_pvals_001, prec_pvals_005, prec_pvals_001, rec_pvals_001, rec_pvals_005
+                f1_pvals_001, prec_pvals_005, prec_pvals_001, rec_pvals_005, rec_pvals_001
             ]
         
         results_df = pd.DataFrame(results_dict)
         results_df.index = [
             'mse_counts', 'hamming_pvals005', 'hamming_pvals001', 'accuracy_pvals005', 'accuracy_pvals001',
-            'f1_pvals005', 'f1_pvals001', 'prec_pvals001', 'prec_pvals005', 'rec_pvals001', 'prec_pvals005'
+            'f1_pvals005', 'f1_pvals001', 'prec_pvals005', 'prec_pvals001', 'rec_pvals005', 'prec_pvals001'
         ]
 
         results_df.to_csv(os.path.join(subdir, 'approx_results.csv'), index=True)
