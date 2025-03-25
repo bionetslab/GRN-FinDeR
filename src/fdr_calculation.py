@@ -1,4 +1,5 @@
 
+import time
 import pandas as pd
 import numpy as np
 import gc
@@ -6,30 +7,38 @@ from dask.distributed import Client, LocalCluster
 from statsmodels.stats.multitest import multipletests
 from arboreto.algo import grnboost2
 from arboreto.utils import load_tf_names
-from typing import Union
+from typing import Union, List
 
-from src.clustering import cluster_genes_to_dict
 from src.preprocessing import preprocess_data
 import random
 import itertools
 
 
-def approximate_fdr(expression_mat : pd.DataFrame,
-                    grn : pd.DataFrame,
-                    gene_to_cluster : Union[dict, tuple[dict, dict]],
-                    num_permutations : int = 1000
-                    ):
+def approximate_fdr(
+        expression_mat : pd.DataFrame,
+        grn : pd.DataFrame,
+        gene_to_cluster : Union[dict, tuple[dict, dict]],
+        num_permutations : int = 1000,
+        grnboost2_random_seed: Union[int, None] = None
+) -> pd.DataFrame:
+
     if isinstance(gene_to_cluster, dict):
-        fdr_grn = _approximate_fdr_no_tfs(expression_mat, 
-                                          grn,
-                                          gene_to_cluster,
-                                          num_permutations)
+        fdr_grn = _approximate_fdr_no_tfs(
+            expression_mat=expression_mat,
+            grn=grn,
+            gene_to_cluster=gene_to_cluster,
+            num_permutations=num_permutations,
+            grnboost2_random_seed=grnboost2_random_seed,
+        )
     else:
-        fdr_grn = _approximate_fdr_with_tfs(expression_mat,
-                                            grn,
-                                            gene_to_cluster[0],
-                                            gene_to_cluster[1],
-                                            num_permutations)
+        fdr_grn = _approximate_fdr_with_tfs(
+            expression_mat=expression_mat,
+            grn=grn,
+            tf_to_cluster=gene_to_cluster[0],
+            gene_to_cluster=gene_to_cluster[1],
+            num_permutations=num_permutations,
+            grnboost2_random_seed=grnboost2_random_seed,
+        )
     return fdr_grn
 
 
@@ -37,7 +46,9 @@ def _approximate_fdr_no_tfs(
         expression_mat: pd.DataFrame,
         grn: pd.DataFrame,
         gene_to_cluster: dict,
-        num_permutations: int = 1000):
+        num_permutations: int = 1000,
+        grnboost2_random_seed: Union[int, None] = None,
+) -> pd.DataFrame:
 
     # Invert gene to cluster dictionary.
     cluster_to_gene = _invert_gene_cluster_dictionary(gene_to_cluster)
@@ -58,8 +69,11 @@ def _approximate_fdr_no_tfs(
         represent_expression = expression_mat[representatives].copy()
         # Shuffle expression matrix.
         represent_permuted = represent_expression.sample(frac=1, axis=1)
-        shuffled_grn = grnboost2(expression_data=represent_permuted,
-                                 tf_names=represent_permuted.columns.to_list())
+        shuffled_grn = grnboost2(
+            expression_data=represent_permuted,
+            tf_names=represent_permuted.columns.to_list(),
+            seed=grnboost2_random_seed,
+        )
         # Compute adjusted count values for each shuffled edge.
         for tf, target, factor in zip(shuffled_grn['TF'], shuffled_grn['target'], shuffled_grn['importance']):
             if (tf, target) in grn_dict:
@@ -101,11 +115,14 @@ def _approximate_fdr_no_tfs(
     return grn_df
 
 
-def _approximate_fdr_with_tfs(expression_mat: pd.DataFrame,
-                              grn: pd.DataFrame,
-                              tf_to_cluster: dict,
-                              gene_to_cluster: dict,
-                              num_permutations: int = 1000):
+def _approximate_fdr_with_tfs(
+        expression_mat: pd.DataFrame,
+        grn: pd.DataFrame,
+        tf_to_cluster: dict,
+        gene_to_cluster: dict,
+        num_permutations: int = 1000,
+        grnboost2_random_seed: Union[int, None] = None
+) -> pd.DataFrame:
     target_to_cluster = _merge_clusterings(tf_to_cluster, gene_to_cluster)
     cluster_to_target = _invert_gene_cluster_dictionary(target_to_cluster)
     cluster_to_gene = _invert_gene_cluster_dictionary(gene_to_cluster)
@@ -132,8 +149,12 @@ def _approximate_fdr_with_tfs(expression_mat: pd.DataFrame,
         represent_expression = expression_mat[joint_representatives].copy()
         # Shuffle expression matrix.
         represent_permuted = represent_expression.sample(frac=1, axis=1)
-        shuffled_grn = grnboost2(expression_data=represent_permuted,
-                                 tf_names=tf_representatives)
+        shuffled_grn = grnboost2(
+            expression_data=represent_permuted,
+            tf_names=tf_representatives,
+            seed=grnboost2_random_seed,
+        )
+
         # Compute adjusted count values for each shuffled edge.
         for tf, target, factor in zip(shuffled_grn['TF'], shuffled_grn['target'], shuffled_grn['importance']):
             if (tf, target) in grn_dict:
@@ -181,6 +202,73 @@ def _draw_representatives(cluster_to_gene : dict, num_representatives : int = 2)
     representatives = [random.sample(val, min(len(val), num_representatives)) for val in cluster_to_gene.values()]
     representatives = list(itertools.chain.from_iterable(representatives))
     return representatives
+
+
+def classical_fdr(
+        expression_mat: pd.DataFrame,
+        grn: pd.DataFrame,
+        tf_names: Union[List[str], None] = None,
+        num_permutations: int = 1000,
+        grnboost2_random_seed: Union[int, None] = None,
+        verbosity: int = 0,
+) -> pd.DataFrame:
+
+    # Create dict representation from CSV input.
+    grn_zipped = zip(grn['TF'].to_list(), grn['target'].to_list(), grn['importance'].to_list())
+    grn_dict = {
+        (tf, target): {'importance': importance, 'count': 0, 'p_value': 0.0} for tf, target, importance in grn_zipped
+    }
+
+    # Iterate for num_permutations, compute GRN on input matrix with shuffled genes
+    for i in range(num_permutations):
+
+        st = time.time()
+
+        if verbosity >= 1:
+            print(f'# ### Iteration {i} ...')
+
+        # Shuffle expression matrix
+        shuffled_expression_mat = expression_mat.sample(frac=1, axis=1, random_state=i)
+
+        # Compute GRN with shuffled expression matrix
+        shuffled_grn = grnboost2(
+            expression_data=shuffled_expression_mat,
+            tf_names=tf_names if tf_names is not None else 'all',
+            seed=grnboost2_random_seed,
+            verbose=False,
+        )
+
+        # Compute adjusted count values for each shuffled edge.
+        shuffled_grn_zipped = zip(shuffled_grn['TF'], shuffled_grn['target'], shuffled_grn['importance'])
+        for tf_shuffled, target_shuffled, importance_shuffled in shuffled_grn_zipped:
+            if (tf_shuffled, target_shuffled) in grn_dict:
+                grn_dict[(tf_shuffled, target_shuffled)]['count'] += int(
+                    importance_shuffled >= grn_dict[(tf_shuffled, target_shuffled)]['importance']
+                )
+
+        et = time.time()
+
+        if verbosity >= 1:
+            print(f'# took {et-st:.2f} seconds')
+
+    # Compute the p-values
+    st = time.time()
+    if verbosity >= 1:
+        print('# ### Computing FDR p-values ...')
+
+    for key, val in grn_dict.items():
+        grn_dict[key]['p_value'] = (grn_dict[key]['count'] + 1) / (num_permutations + 1)
+
+    et = time.time()
+    if verbosity >= 1:
+        print(f'# took {et-st:.2f} seconds')
+
+    # Turn dict into dataframe
+    grn_df = pd.DataFrame([
+        {'TF': tf, 'target': target, **values} for (tf, target), values in grn_dict.items()
+    ])
+
+    return grn_df
 
 
 def classical_fdr_wout_merge(expression_matrix: pd.DataFrame,
