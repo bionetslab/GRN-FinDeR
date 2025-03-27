@@ -510,7 +510,7 @@ def approximate_fdr_validation(
         # Load target genes file.
         if include_tfs:
             target_file = f'{tissue}_target_genes.tsv'
-            target_df = pd.read_csv(target_file, index_col=0)
+            target_df = pd.read_csv(os.path.join(subdir, target_file), index_col=0)
             tf_list = set(expression_mat.columns) - set(target_df['target_gene'])
 
         # Compute and save distance matrix
@@ -601,7 +601,9 @@ def assess_approximation_quality(
 ):
     import os
     import pandas as pd
-    from sklearn.metrics import mean_squared_error, accuracy_score, hamming_loss, f1_score
+    from sklearn.metrics import (
+        mean_squared_error, accuracy_score, hamming_loss, f1_score, precision_score, recall_score
+    )
 
     # Get subdirectories with expression and ground truth grn data for all tissues
     subdirectories = [
@@ -619,7 +621,8 @@ def assess_approximation_quality(
         
         print(f'Processing tissue {tissue}...')
         # Load approximate Pvalues and counts.
-        grn_file = os.path.join(subdir, 'grn.csv')
+        grn_file = os.path.join(subdir, 'approx_grn_with_tf_clustering.csv')
+        # grn_file = os.path.join(subdir, 'grn.csv')
         grn = pd.read_csv(grn_file, index_col=0)
         
         results_dict = dict()
@@ -639,17 +642,26 @@ def assess_approximation_quality(
             accuracy_pvals_005 = accuracy_score(gt_signif_005, approx_signif_005)
             hamming_pvals_005 = hamming_loss(gt_signif_005, approx_signif_005)
             f1_pvals_005 = f1_score(gt_signif_005, approx_signif_005)
+            prec_pvals_005 = precision_score(gt_signif_005, approx_signif_005)
+            rec_pvals_005 = recall_score(gt_signif_005, approx_signif_005)
+
             accuracy_pvals_001 = accuracy_score(gt_signif_001, approx_signif_001)
             hamming_pvals_001 = hamming_loss(gt_signif_001, approx_signif_001)
             f1_pvals_001 = f1_score(gt_signif_001, approx_signif_001)
-            results_dict[f'clusters_{clusters}'] = [mse_counts, hamming_pvals_005, hamming_pvals_001,
-                                                    accuracy_pvals_005, accuracy_pvals_001,
-                                                    f1_pvals_005, f1_pvals_001]
+            prec_pvals_001 = precision_score(gt_signif_001, approx_signif_001)
+            rec_pvals_001 = recall_score(gt_signif_001, approx_signif_001)
+
+            results_dict[f'clusters_{clusters}'] = [
+                mse_counts, hamming_pvals_005, hamming_pvals_001, accuracy_pvals_005, accuracy_pvals_001, f1_pvals_005,
+                f1_pvals_001, prec_pvals_005, prec_pvals_001, rec_pvals_005, rec_pvals_001
+            ]
         
         results_df = pd.DataFrame(results_dict)
-        results_df.index = ['mse_counts', 'hamming_pvals005', 'hamming_pvals001', 
-                            'accuracy_pvals005', 'accuracy_pvals001', 'f1_pvals005',
-                            'f1_pvals001']
+        results_df.index = [
+            'mse_counts', 'hamming_pvals005', 'hamming_pvals001', 'accuracy_pvals005', 'accuracy_pvals001',
+            'f1_pvals005', 'f1_pvals001', 'prec_pvals005', 'prec_pvals001', 'rec_pvals005', 'rec_pvals001'
+        ]
+
         results_df.to_csv(os.path.join(subdir, 'approx_results.csv'), index=True)
             
 def compute_distance_metainfo(root_directory: str,
@@ -685,6 +697,534 @@ def compute_distance_metainfo(root_directory: str,
         info_df = pd.DataFrame(info_dict)
         info_df.to_csv(os.path.join(subdir, 'distance_info.csv'))
 
+def debug_exampe0():
+
+    import os
+    import time
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+
+    from arboreto.algo import grnboost2
+    from src.fdr_calculation import classical_fdr, approximate_fdr
+    from src.distance_matrix import compute_wasserstein_distance_matrix
+    from src.clustering import cluster_genes_to_dict
+    from sklearn.metrics import mean_squared_error, accuracy_score, precision_score, recall_score, f1_score
+
+    # ### Set all flags and vars here ##################################################################################
+    grnboost2_random_seed = 42
+    n_permutations = 1000
+    sig_thresh_plot = 0.05
+    # n_clusters = list(range(120, 200, 20))
+    n_clusters = list(range(10, 101, 20)) + list(range(100, 200, 20)) + list(range(200, 401, 20))
+    fdr_thresholds = [0.05, 0.01]
+
+    mean_case1 = 0
+    mean_case2 = 11
+    scale_case1_case2 = 1.0
+
+    n_cells = 300
+
+    n_tfs_case1 = 100
+    n_tfs_case2 = 100
+    n_non_tfs_case1 = 200
+    n_non_tfs_case2 = 200
+
+    inference = True
+    just_approx = False
+
+    # ### Define path where results are stored
+    save_p = os.path.join(os.getcwd(), 'results/debug0_w_fixed_seed')
+    os.makedirs(save_p, exist_ok=True)
+
+    if inference:
+        if not just_approx:
+            # Simulate data, infer input GRN, classical FDR, compute distance matrix
+
+            # ### Simulate simple dataset:
+            # - 2 Normal distributions (I/case1, II/case2)
+            # - I) Mean low, unit variance, II) Mean high, unit variance
+            # - Some TFs with I) some with II) same for non TFs
+            # - I) TFs should be predictors for I) genes, same for II)
+
+            np.random.seed(42)
+
+            case1_tf_data = np.random.normal(loc=mean_case1, scale=scale_case1_case2, size=(n_cells, n_tfs_case1))
+            case2_tf_data = np.random.normal(loc=mean_case2, scale=scale_case1_case2, size=(n_cells, n_tfs_case2))
+            case1_non_tf_data = np.random.normal(loc=mean_case1, scale=scale_case1_case2, size=(n_cells, n_non_tfs_case1))
+            case2_non_tf_data = np.random.normal(loc=mean_case2, scale=scale_case1_case2, size=(n_cells, n_non_tfs_case2))
+
+            x = np.concatenate((case1_tf_data, case2_tf_data, case1_non_tf_data, case2_non_tf_data), axis=1)
+
+            tf_names = [f'TF_{i}_c1' for i in range(n_tfs_case1)] + [f'TF_{i}_c2' for i in range(n_tfs_case2)]
+            non_tf_names = [f'Gene_{i}_c1' for i in range(n_non_tfs_case1)] + [f'Gene_{i}_c2' for i in range(n_non_tfs_case2)]
+
+            expression_df = pd.DataFrame(x, columns=tf_names + non_tf_names)
+
+            # print(expression_df)
+            print(
+                f"Mean expr. TFs c1: {expression_df[[f'TF_{i}_c1' for i in range(n_tfs_case1)]].to_numpy().mean()}\n"
+                f"Mean expr. TFs c2: {expression_df[[f'TF_{i}_c2' for i in range(n_tfs_case2)]].to_numpy().mean()}\n"
+                f"Mean expr. non TFs c1: {expression_df[[f'Gene_{i}_c1' for i in range(n_non_tfs_case1)]].to_numpy().mean()}\n"
+                f"Mean expr. non TFs c1: {expression_df[[f'Gene_{i}_c2' for i in range(n_non_tfs_case2)]].to_numpy().mean()}"
+            )
+
+            expression_df.to_csv(os.path.join(save_p, 'expression_df.csv'))
+
+            # ### Infer input GRN
+            print('# ### Inferring input GRN ...')
+            st_input_grn = time.time()
+            input_grn = grnboost2(
+                expression_data=expression_df,
+                tf_names=tf_names,
+                verbose=True,
+                seed=grnboost2_random_seed
+            )
+            et_input_grn = time.time()
+            print(f'# took {et_input_grn - st_input_grn} seconds')
+
+            # print(input_grn)
+
+            c1_reg_c1_count = ((input_grn['TF'].str.endswith('c1')) & (input_grn['target'].str.endswith('c1'))).sum()
+            c2_reg_c2_count = ((input_grn['TF'].str.endswith('c2')) & (input_grn['target'].str.endswith('c2'))).sum()
+
+            print(
+                f'Class 1 regulated class 1, count: {c1_reg_c1_count}\n'
+                f'Class 2 regulated class 2, count: {c2_reg_c2_count}\n'
+                f'Rest: {input_grn.shape[0] - (c1_reg_c1_count + c2_reg_c2_count)}\n'
+            )
+
+            c1_reg_c1_or_c2_reg_c2_fractions = []
+            top_k = list(range(1, input_grn.shape[0] + 1))
+            for i in top_k:
+                count = (
+                        ((input_grn.iloc[:i]['TF'].str.endswith('c1')) & (input_grn.iloc[:i]['target'].str.endswith('c1'))) |
+                        ((input_grn.iloc[:i]['TF'].str.endswith('c2')) & (input_grn.iloc[:i]['target'].str.endswith('c2')))
+                ).sum()
+
+                c1_reg_c1_or_c2_reg_c2_fractions.append(count / (i + 1))
+
+            fig, ax = plt.subplots(dpi=300)
+            ax.plot(top_k, c1_reg_c1_or_c2_reg_c2_fractions, c='r', linewidth=0.5)
+            ax.set_ylabel('Fraction c1-c1 or c2-c2 edges')
+            ax.set_xlabel('Top k edges (ranked by importance)')
+            plt.savefig(os.path.join(save_p, 'frac_of_c1_c1_or_c2_c2_regulation_in_top_k.png'), dpi=300)
+            plt.close('all')
+
+            input_grn.to_csv(os.path.join(save_p, 'input_grn.csv'))
+
+            # ### Perform classical FDR control
+            print('# ### Performing classical FDR ...')
+            st_classical_fdr = time.time()
+            ground_truth_grn = classical_fdr(
+                expression_mat=expression_df,
+                grn=input_grn,
+                tf_names=tf_names,
+                num_permutations=n_permutations,
+                grnboost2_random_seed=grnboost2_random_seed,
+                verbosity=1,
+            )
+            et_classical_fdr = time.time()
+            print(f'# took {et_classical_fdr - st_classical_fdr} seconds')
+
+            # print(ground_truth_grn)
+            sig_bool = ground_truth_grn['p_value'].to_numpy() <= sig_thresh_plot
+            n_sig = np.cumsum(sig_bool) / np.array(list(range(1, ground_truth_grn.shape[0] + 1)))
+
+            fig, ax = plt.subplots(dpi=300)
+            ax.plot(top_k, n_sig, c='g', linewidth=0.5)
+            ax.set_ylabel('Fraction significant edges')
+            ax.set_xlabel('Top k edges (ranked by importance)')
+            plt.savefig(os.path.join(save_p, 'frac_of_significant_in_top_k.png'), dpi=300)
+            plt.close('all')
+
+            ground_truth_grn.to_csv(os.path.join(save_p, 'ground_truth_grn.csv'))
+
+            # ### Perform approximate FDR control
+            print('# ### Computing Wasserstein distance matrix...')
+            st_dist_mat = time.time()
+            distance_mat = compute_wasserstein_distance_matrix(expression_mat=expression_df, num_threads=-1)
+            et_dist_mat = time.time()
+            print(f'# took {et_dist_mat - st_dist_mat} seconds')
+
+            distance_mat.to_csv(os.path.join(save_p, 'distance_mat.csv'))
+
+        else:
+            # Load expression matrix, input grn, ground truth grn
+            expression_df = pd.read_csv(os.path.join(save_p, 'expression_df.csv'), index_col=0)
+            input_grn = pd.read_csv(os.path.join(save_p, 'input_grn.csv'), index_col=0)
+            ground_truth_grn = pd.read_csv(os.path.join(save_p, 'approx_fdr_grn.csv'), index_col=0)
+            distance_mat = pd.read_csv(os.path.join(save_p, 'distance_mat.csv'), index_col=0)
+
+            tf_names = [s for s in expression_df.columns if s.startswith('TF')]
+
+        # Cluster TFs and non TFs separately
+        tf_bool = [True if gene in tf_names else False for gene in distance_mat.columns]
+        gene_bool = [not b for b in tf_bool]
+        distance_mat_tfs = distance_mat.loc[tf_bool, tf_bool]
+        distance_mat_non_tfs = distance_mat.loc[gene_bool, gene_bool]
+
+        for n_clust in n_clusters:
+            print(f'# ### Approx. FDR control with {n_clust} clusters ...')
+
+            if len(tf_names) > n_clust:
+                tfs_to_clust = cluster_genes_to_dict(distance_matrix=distance_mat_tfs, num_clusters=n_clust)
+            else:
+                tfs_to_clust = {tfn: i for i, tfn in enumerate(tf_names)}  # No clustering
+            non_tfs_to_clust = cluster_genes_to_dict(distance_matrix=distance_mat_non_tfs, num_clusters=n_clust)
+
+            # Perform FDR control
+            dummy_grn = approximate_fdr(
+                expression_mat=expression_df,
+                grn=input_grn,
+                gene_to_cluster=(tfs_to_clust, non_tfs_to_clust),
+                num_permutations=n_permutations,
+                grnboost2_random_seed=grnboost2_random_seed,
+            )
+
+            # Append results to groundtruth GRN
+            ground_truth_grn[f'count_{n_clust}'] = dummy_grn['count'].to_numpy()
+            ground_truth_grn[f'pvalue_{n_clust}'] = dummy_grn['pvalue'].to_numpy()
+
+            ground_truth_grn.to_csv(os.path.join(save_p, 'approx_fdr_grn.csv'))
+
+        # print(ground_truth_grn)
+
+    # ### Evaluate approximation performance
+    else:
+        ground_truth_grn = pd.read_csv(os.path.join(save_p, 'approx_fdr_grn.csv'), index_col=0)
+        # print(ground_truth_grn)
+
+        # Sort columns
+        gtgrn_part1 = ground_truth_grn.iloc[:, :5].copy()
+        gtgrn_part2 = ground_truth_grn.iloc[:, 5:].copy()
+
+        sorted_cols = sorted(gtgrn_part2.columns, key=lambda x: int(x.split("_")[1]))
+        gtgrn_part2 = gtgrn_part2[sorted_cols]
+
+        ground_truth_grn = pd.concat([gtgrn_part1, gtgrn_part2], axis=1)
+
+
+    res_df = pd.DataFrame(index=['mse', 'acc', 'prec', 'rec', 'f1'])
+    for thresh in fdr_thresholds:
+        ground_truth_p_vals = ground_truth_grn['p_value'].to_numpy()
+        ground_truth_sig_bool = ground_truth_p_vals <= thresh
+        for n_clust in n_clusters:
+            approx_p_vals = ground_truth_grn[f'pvalue_{n_clust}'].to_numpy()
+            approx_sig_bool =  approx_p_vals <= thresh
+
+            mse = mean_squared_error(ground_truth_p_vals, approx_p_vals)
+            acc = accuracy_score(ground_truth_sig_bool, approx_sig_bool)
+            prec = precision_score(ground_truth_sig_bool, approx_sig_bool)
+            rec = recall_score(ground_truth_sig_bool, approx_sig_bool)
+            f1 = f1_score(ground_truth_sig_bool, approx_sig_bool)
+
+            res_df[f'nclust{n_clust}_thresh{thresh}'] = [mse, acc, prec, rec, f1]
+
+    k = len(n_clusters)
+    res_df_005 = res_df.iloc[:, 0:k]
+    res_df_001 = res_df.iloc[:, 0:k]
+    print(res_df_005)
+    print(res_df_001)
+
+    res_df.to_csv(os.path.join(save_p, 'res_df.csv'))
+
+    fig, ax = plt.subplots(dpi=300)
+    ax.plot(n_clusters, res_df_005.loc['f1'], c='g', label='F1, thresh: 0.05', linewidth=1.0, marker='o')
+    ax.plot(n_clusters, res_df_001.loc['f1'], c='b', label='F1, thresh: 0.01', linewidth=1.0, marker='o')
+    ax.set_ylabel('F1 score')
+    ax.set_xlabel('N clusters')
+    ax.axvline(x=n_tfs_case1 + n_tfs_case1, color='r', linestyle='--', label='number of TFs')
+    plt.legend()
+    plt.savefig(os.path.join(save_p, 'eval_f1.png'), dpi=300)
+    plt.close('all')
+
+    fig, ax = plt.subplots(dpi=300)
+    ax.plot(n_clusters, res_df_005.loc['rec'], c='g', label='Rec, thresh: 0.05', linewidth=1.0, marker='o')
+    ax.plot(n_clusters, res_df_001.loc['rec'], c='b', label='Rec, thresh: 0.01', linewidth=1.0, marker='o')
+    ax.set_ylabel('Recall score')
+    ax.set_xlabel('N clusters')
+    ax.axvline(x=n_tfs_case1 + n_tfs_case1, color='r', linestyle='--', label='number of TFs')
+    plt.legend()
+    plt.savefig(os.path.join(save_p, 'eval_rec.png'), dpi=300)
+    plt.close('all')
+
+    fig, ax = plt.subplots(dpi=300)
+    ax.plot(n_clusters, res_df_005.loc['prec'], c='g', label='Prec, thresh: 0.05', linewidth=1.0, marker='o')
+    ax.plot(n_clusters, res_df_001.loc['prec'], c='b', label='Prec, thresh: 0.01', linewidth=1.0, marker='o')
+    ax.set_ylabel('Precision score')
+    ax.set_xlabel('N clusters')
+    ax.axvline(x=n_tfs_case1 + n_tfs_case1, color='r', linestyle='--', label='number of TFs')
+    plt.legend()
+    plt.savefig(os.path.join(save_p, 'eval_prec.png'), dpi=300)
+    plt.close('all')
+
+    fig, ax = plt.subplots(dpi=300)
+    ax.plot(n_clusters, res_df_005.loc['acc'], c='g', label='Acc, thresh: 0.05', linewidth=1.0, marker='o')
+    ax.plot(n_clusters, res_df_001.loc['acc'], c='b', label='Acc, thresh: 0.01', linewidth=1.0, marker='o')
+    ax.set_ylabel('Accuracy')
+    ax.set_xlabel('N clusters')
+    ax.axvline(x=n_tfs_case1 + n_tfs_case1, color='r', linestyle='--', label='number of TFs')
+    plt.legend()
+    plt.savefig(os.path.join(save_p, 'eval_acc.png'), dpi=300)
+    plt.close('all')
+
+    fig, ax = plt.subplots(dpi=300)
+    ax.plot(n_clusters, res_df_005.loc['mse'], c='g', label='MSE', linewidth=1.0, marker='o')
+    ax.set_ylabel('MSE')
+    ax.set_xlabel('N clusters')
+    ax.axvline(x=n_tfs_case1 + n_tfs_case1, color='r', linestyle='--', label='number of TFs')
+    plt.legend()
+    plt.savefig(os.path.join(save_p, 'eval_mse.png'), dpi=300)
+    plt.close('all')
+
+
+def debug_exampe1():
+
+    import os
+    import time
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+
+    from arboreto.algo import grnboost2
+    from src.fdr_calculation import classical_fdr, approximate_fdr
+    from src.distance_matrix import compute_wasserstein_distance_matrix
+    from src.clustering import cluster_genes_to_dict
+    from sklearn.metrics import mean_squared_error, accuracy_score, precision_score, recall_score, f1_score
+
+    # ### Set all flags and vars here ##################################################################################
+    grnboost2_random_seed = 42
+    n_permutations = 1000
+    sig_thresh_plot = 0.05
+    n_clusters = [10, ] + list(range(20, 301, 20))  # 300 as upper bound, draw 2 representatives (2 x 300 <= 600)
+    fdr_thresholds = [0.05, 0.01]
+
+    mean_case1 = 0
+    mean_case2 = 11
+    scale_case1_case2 = 1.0
+
+    n_cells = 300
+
+    n_genes_case1 = 300
+    n_genes_case2 = 300
+
+    inference = True
+    just_approx = False
+
+    # ### Define path where results are stored
+    save_p = os.path.join(os.getcwd(), 'results/debug1_w_fixed_seed')
+    os.makedirs(save_p, exist_ok=True)
+
+    if inference:
+        if not just_approx:
+            # Simulate data, infer input GRN, classical FDR, compute distance matrix
+
+            # ### Simulate simple dataset:
+            # - 2 Normal distributions (I/case1, II/case2)
+            # - I) Mean low, unit variance, II) Mean high, unit variance
+            # - Some TFs with I) some with II) same for non TFs
+            # - I) TFs should be predictors for I) genes, same for II)
+
+            np.random.seed(42)
+
+            case1_data = np.random.normal(loc=mean_case1, scale=scale_case1_case2, size=(n_cells, n_genes_case1))
+            case2_data = np.random.normal(loc=mean_case2, scale=scale_case1_case2, size=(n_cells, n_genes_case2))
+
+            x = np.concatenate((case1_data, case2_data), axis=1)
+
+            gene_names = [f'G_{i}_c1' for i in range(n_genes_case1)] + [f'G_{i}_c2' for i in range(n_genes_case2)]
+
+            expression_df = pd.DataFrame(x, columns=gene_names)
+
+            # print(expression_df)
+            print(
+                f"Mean expr. genes c1: {expression_df[[f'G_{i}_c1' for i in range(n_genes_case1)]].to_numpy().mean()}\n"
+                f"Mean expr. genes c2: {expression_df[[f'G_{i}_c2' for i in range(n_genes_case2)]].to_numpy().mean()}\n"
+            )
+            expression_df.to_csv(os.path.join(save_p, 'expression_df.csv'))
+
+            # ### Infer input GRN
+            print('# ### Inferring input GRN ...')
+            st_input_grn = time.time()
+            input_grn = grnboost2(
+                expression_data=expression_df,
+                tf_names=None,   # No TFs !!!
+                verbose=True,
+                seed=grnboost2_random_seed
+            )
+            et_input_grn = time.time()
+            print(f'# took {et_input_grn - st_input_grn} seconds')
+
+            # print(input_grn)
+
+            c1_reg_c1_count = ((input_grn['TF'].str.endswith('c1')) & (input_grn['target'].str.endswith('c1'))).sum()
+            c2_reg_c2_count = ((input_grn['TF'].str.endswith('c2')) & (input_grn['target'].str.endswith('c2'))).sum()
+
+            print(
+                f'Class 1 regulated class 1, count: {c1_reg_c1_count}\n'
+                f'Class 2 regulated class 2, count: {c2_reg_c2_count}\n'
+                f'Rest: {input_grn.shape[0] - (c1_reg_c1_count + c2_reg_c2_count)}\n'
+            )
+
+            c1_reg_c1_or_c2_reg_c2_fractions = []
+            top_k = list(range(1, input_grn.shape[0] + 1))
+            for i in top_k:
+                count = (
+                        ((input_grn.iloc[:i]['TF'].str.endswith('c1')) & (input_grn.iloc[:i]['target'].str.endswith('c1'))) |
+                        ((input_grn.iloc[:i]['TF'].str.endswith('c2')) & (input_grn.iloc[:i]['target'].str.endswith('c2')))
+                ).sum()
+
+                c1_reg_c1_or_c2_reg_c2_fractions.append(count / (i + 1))
+
+            fig, ax = plt.subplots(dpi=300)
+            ax.plot(top_k, c1_reg_c1_or_c2_reg_c2_fractions, c='r', linewidth=0.5)
+            ax.set_ylabel('Fraction c1-c1 or c2-c2 edges')
+            ax.set_xlabel('Top k edges (ranked by importance)')
+            plt.savefig(os.path.join(save_p, 'frac_of_c1_c1_or_c2_c2_regulation_in_top_k.png'), dpi=300)
+            plt.close('all')
+
+            input_grn.to_csv(os.path.join(save_p, 'input_grn.csv'))
+
+            # ### Perform classical FDR control
+            print('# ### Performing classical FDR ...')
+            st_classical_fdr = time.time()
+            ground_truth_grn = classical_fdr(
+                expression_mat=expression_df,
+                grn=input_grn,
+                tf_names=None,  # No TFs !!!
+                num_permutations=n_permutations,
+                grnboost2_random_seed=grnboost2_random_seed,
+                verbosity=1,
+            )
+            et_classical_fdr = time.time()
+            print(f'# took {et_classical_fdr - st_classical_fdr} seconds')
+
+            # print(ground_truth_grn)
+            sig_bool = ground_truth_grn['p_value'].to_numpy() <= sig_thresh_plot
+            n_sig = np.cumsum(sig_bool) / np.array(list(range(1, ground_truth_grn.shape[0] + 1)))
+
+            fig, ax = plt.subplots(dpi=300)
+            ax.plot(top_k, n_sig, c='g', linewidth=0.5)
+            ax.set_ylabel('Fraction significant edges')
+            ax.set_xlabel('Top k edges (ranked by importance)')
+            plt.savefig(os.path.join(save_p, 'frac_of_significant_in_top_k.png'), dpi=300)
+            plt.close('all')
+
+            ground_truth_grn.to_csv(os.path.join(save_p, 'ground_truth_grn.csv'))
+
+            # ### Perform approximate FDR control
+            print('# ### Computing Wasserstein distance matrix...')
+            st_dist_mat = time.time()
+            distance_mat = compute_wasserstein_distance_matrix(expression_mat=expression_df, num_threads=-1)
+            et_dist_mat = time.time()
+            print(f'# took {et_dist_mat - st_dist_mat} seconds')
+
+            distance_mat.to_csv(os.path.join(save_p, 'distance_mat.csv'))
+
+        else:
+            # Load expression matrix, input grn, ground truth grn
+            expression_df = pd.read_csv(os.path.join(save_p, 'expression_df.csv'), index_col=0)
+            input_grn = pd.read_csv(os.path.join(save_p, 'input_grn.csv'), index_col=0)
+            ground_truth_grn = pd.read_csv(os.path.join(save_p, 'approx_fdr_grn.csv'), index_col=0)
+            distance_mat = pd.read_csv(os.path.join(save_p, 'distance_mat.csv'), index_col=0)
+
+
+        for n_clust in n_clusters:
+            print(f'# ### Approx. FDR control with {n_clust} clusters ...')
+
+            gene_to_clust = cluster_genes_to_dict(distance_matrix=distance_mat, num_clusters=n_clust)
+
+            # Perform FDR control
+            dummy_grn = approximate_fdr(
+                expression_mat=expression_df,
+                grn=input_grn,
+                gene_to_cluster=gene_to_clust,  # No TFs !!!
+                num_permutations=n_permutations,
+                grnboost2_random_seed=grnboost2_random_seed,
+            )
+
+            # Append results to groundtruth GRN
+            ground_truth_grn[f'count_{n_clust}'] = dummy_grn['count'].to_numpy()
+            ground_truth_grn[f'pvalue_{n_clust}'] = dummy_grn['pvalue'].to_numpy()
+
+            ground_truth_grn.to_csv(os.path.join(save_p, 'approx_fdr_grn.csv'))
+
+        # print(ground_truth_grn)
+
+    # ### Evaluate approximation performance
+    else:
+        ground_truth_grn = pd.read_csv(os.path.join(save_p, 'approx_fdr_grn.csv'), index_col=0)
+        # print(ground_truth_grn)
+
+    res_df = pd.DataFrame(index=['mse', 'acc', 'prec', 'rec', 'f1'])
+    for thresh in fdr_thresholds:
+        ground_truth_p_vals = ground_truth_grn['p_value'].to_numpy()
+        ground_truth_sig_bool = ground_truth_p_vals <= thresh
+        for n_clust in n_clusters:
+            approx_p_vals = ground_truth_grn[f'pvalue_{n_clust}'].to_numpy()
+            approx_sig_bool =  approx_p_vals <= thresh
+
+            mse = mean_squared_error(ground_truth_p_vals, approx_p_vals)
+            acc = accuracy_score(ground_truth_sig_bool, approx_sig_bool)
+            prec = precision_score(ground_truth_sig_bool, approx_sig_bool)
+            rec = recall_score(ground_truth_sig_bool, approx_sig_bool)
+            f1 = f1_score(ground_truth_sig_bool, approx_sig_bool)
+
+            res_df[f'nclust{n_clust}_thresh{thresh}'] = [mse, acc, prec, rec, f1]
+
+    k = len(n_clusters)
+    res_df_005 = res_df.iloc[:, 0:k]
+    res_df_001 = res_df.iloc[:, 0:k]
+    print(res_df_005)
+    print(res_df_001)
+
+    res_df.to_csv(os.path.join(save_p, 'res_df.csv'))
+
+    fig, ax = plt.subplots(dpi=300)
+    ax.plot(n_clusters, res_df_005.loc['f1'], c='g', label='F1, thresh: 0.05', linewidth=1.0, marker='o')
+    ax.plot(n_clusters, res_df_001.loc['f1'], c='b', label='F1, thresh: 0.01', linewidth=1.0, marker='o')
+    ax.set_ylabel('F1 score')
+    ax.set_xlabel('N clusters')
+    plt.legend()
+    plt.savefig(os.path.join(save_p, 'eval_f1.png'), dpi=300)
+    plt.close('all')
+
+    fig, ax = plt.subplots(dpi=300)
+    ax.plot(n_clusters, res_df_005.loc['rec'], c='g', label='Rec, thresh: 0.05', linewidth=1.0, marker='o')
+    ax.plot(n_clusters, res_df_001.loc['rec'], c='b', label='Rec, thresh: 0.01', linewidth=1.0, marker='o')
+    ax.set_ylabel('Recall score')
+    ax.set_xlabel('N clusters')
+    plt.legend()
+    plt.savefig(os.path.join(save_p, 'eval_rec.png'), dpi=300)
+    plt.close('all')
+
+    fig, ax = plt.subplots(dpi=300)
+    ax.plot(n_clusters, res_df_005.loc['prec'], c='g', label='Prec, thresh: 0.05', linewidth=1.0, marker='o')
+    ax.plot(n_clusters, res_df_001.loc['prec'], c='b', label='Prec, thresh: 0.01', linewidth=1.0, marker='o')
+    ax.set_ylabel('Precision score')
+    ax.set_xlabel('N clusters')
+    plt.legend()
+    plt.savefig(os.path.join(save_p, 'eval_prec.png'), dpi=300)
+    plt.close('all')
+
+    fig, ax = plt.subplots(dpi=300)
+    ax.plot(n_clusters, res_df_005.loc['acc'], c='g', label='Acc, thresh: 0.05', linewidth=1.0, marker='o')
+    ax.plot(n_clusters, res_df_001.loc['acc'], c='b', label='Acc, thresh: 0.01', linewidth=1.0, marker='o')
+    ax.set_ylabel('Accuracy')
+    ax.set_xlabel('N clusters')
+    plt.legend()
+    plt.savefig(os.path.join(save_p, 'eval_acc.png'), dpi=300)
+    plt.close('all')
+
+    fig, ax = plt.subplots(dpi=300)
+    ax.plot(n_clusters, res_df_005.loc['mse'], c='g', label='MSE', linewidth=1.0, marker='o')
+    ax.set_ylabel('MSE')
+    ax.set_xlabel('N clusters')
+    plt.legend()
+    plt.savefig(os.path.join(save_p, 'eval_mse.png'), dpi=300)
+    plt.close('all')
+
 
 if __name__ == '__main__':
 
@@ -696,8 +1236,11 @@ if __name__ == '__main__':
     cluster_metrics = False
     plot_clust_metrics = False
     fdr = False
-    mwe = True
+    mwe = False
     approx_quality = False
+    plot_approx_quality = False
+    debug_example0 = False
+    debug_example1 = False
 
     if generate_fdr_control_input:
         # ### Compute input to FDR control for all tissues (GRN, distance matrix, clustering)
@@ -761,12 +1304,66 @@ if __name__ == '__main__':
         example_workflow()
 
     elif approx_quality:
+
         assess_approximation_quality(
-        root_directory="/home/woody/iwbn/iwbn106h/gtex",
-        num_clusters=[700],
+        root_directory=os.path.join(os.getcwd(), "data"),
+        num_clusters=[100, 200, 300],
         num_permutations=1000,
         filter_tissues=["Adipose_Tissue"])
-    
+
+    elif plot_approx_quality:
+        import pandas as pd
+        import matplotlib.pyplot as plt
+        df = pd.read_csv(os.path.join(os.getcwd(), 'data/Adipose_Tissue/approx_results.csv'), index_col=0)
+
+        fig, ax = plt.subplots(dpi=300)
+        ax.plot([0, 1, 2], df.loc['mse_counts', :].to_numpy(), label='mse', color='r', marker='o')
+        ax.set_xlabel('Number of clusters')
+        ax.set_ylabel('MSE')
+        ax.set_xticks([0, 1, 2])
+        ax.set_xticklabels([100, 200, 300])
+        plt.savefig(os.path.join(os.getcwd(), 'data/Adipose_Tissue/mse.png'), dpi=300)
+        plt.close('all')
+
+        fig, ax = plt.subplots(dpi=300)
+        ax.plot([0, 1, 2], df.loc['accuracy_pvals005', :].to_numpy(), label='Accuracy 0.05', color='c', marker='x')
+        ax.plot([0, 1, 2], df.loc['accuracy_pvals001', :].to_numpy(), label='Accuracy 0.01', color='y', marker='x')
+        ax.set_xlabel('Number of clusters')
+        ax.set_ylabel('Accuracy')
+        ax.set_xticks([0, 1, 2])
+        ax.set_xticklabels([100, 200, 300])
+        plt.legend()
+        plt.savefig(os.path.join(os.getcwd(), 'data/Adipose_Tissue/acc.png'), dpi=300)
+        plt.close('all')
+
+        fig, ax = plt.subplots(dpi=300)
+        ax.plot([0, 1, 2], df.loc['prec_pvals005', :].to_numpy(), label='Prec 0.05', color='g', marker='x')
+        ax.plot([0, 1, 2], df.loc['rec_pvals005', :].to_numpy(), label='Rec 0.05', color='m', marker='x')
+        ax.set_xlabel('Number of clusters')
+        ax.set_ylabel('Prec and rec')
+        ax.set_xticks([0, 1, 2])
+        ax.set_xticklabels([100, 200, 300])
+        plt.legend()
+        plt.savefig(os.path.join(os.getcwd(), 'data/Adipose_Tissue/prec_rec_005.png'), dpi=300)
+        plt.close('all')
+
+        fig, ax = plt.subplots(dpi=300)
+        ax.plot([0, 1, 2], df.loc['prec_pvals001', :].to_numpy(), label='Prec 0.01', color='g', marker='x')
+        ax.plot([0, 1, 2], df.loc['rec_pvals001', :].to_numpy(), label='Rec 0.01', color='m', marker='x')
+        ax.set_xlabel('Number of clusters')
+        ax.set_ylabel('Prec and rec')
+        ax.set_xticks([0, 1, 2])
+        ax.set_xticklabels([100, 200, 300])
+        plt.legend()
+        plt.savefig(os.path.join(os.getcwd(), 'data/Adipose_Tissue/prec_rec_001.png'), dpi=300)
+        plt.close('all')
+
+    elif debug_example0:
+        debug_exampe0()
+
+    elif debug_exampe1:
+        debug_exampe1()
+
     else:
         root_directory  = "/home/woody/iwbn/iwbn106h/gtex"
         num_clusters = list(range(100, 1001, 100))
