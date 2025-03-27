@@ -664,6 +664,38 @@ def assess_approximation_quality(
 
         results_df.to_csv(os.path.join(subdir, 'approx_results.csv'), index=True)
             
+def compute_distance_metainfo(root_directory: str,
+        filter_tissues : list[str] = []):
+    import os
+    import pandas as pd
+    import numpy as np
+
+    # Get subdirectories with expression and ground truth grn data for all tissues
+    subdirectories = [
+        os.path.join(root_directory, d) for d in os.listdir(root_directory)
+        if os.path.isdir(os.path.join(root_directory, d))
+    ]
+    tissues = [str(d) for d in os.listdir(root_directory) if os.path.isdir(os.path.join(root_directory, d))]
+
+    # Iterate over tissues
+    for tissue, subdir in zip(tissues, subdirectories):
+
+        if len(filter_tissues)>0 and (not tissue in filter_tissues):
+            # Ignore current tissue subdirectory.
+            continue 
+        
+        print(f'Processing tissue {tissue}...')
+        # Load approximate Pvalues and counts.
+        dist_file = os.path.join(subdir, 'distance_matrix.csv')
+        dist_df = pd.read_csv(dist_file, index_col=0)
+        
+        dist_mat = dist_df.to_numpy()
+        mask = np.eye(dist_mat.shape[0], dtype=bool)
+        non_diag_values = dist_mat[~mask]
+        unique_values = np.unique(non_diag_values)
+        info_dict = {'min' : [unique_values.min()], 'max' : [unique_values.max()], 'median' : [np.median(unique_values)], 'mean' : [np.mean(unique_values)]}
+        info_df = pd.DataFrame(info_dict)
+        info_df.to_csv(os.path.join(subdir, 'distance_info.csv'))
 
 def debug_exampe0():
 
