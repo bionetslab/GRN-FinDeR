@@ -1226,6 +1226,82 @@ def debug_exampe1():
     plt.close('all')
 
 
+def main_time_shuffling():
+
+    import time
+    import numpy as np
+    import pandas as pd
+
+    from numba import njit, prange
+
+    expr_mat = np.random.normal(loc=1, scale=6, size=(2000, 20000))
+    expr_df = pd.DataFrame(expr_mat, columns=[f'gene_{i}' for i in range(expr_mat.shape[1])])
+
+    def shuffle_columns_numba_fisher_yates(df):
+        matrix = df.to_numpy()
+        shuffled = shuffle_columns_numba_fisher_yates_worker(matrix)
+        return pd.DataFrame(shuffled, columns=df.columns, index=df.index)
+
+    @njit(parallel=True)
+    def shuffle_columns_numba_fisher_yates_worker(matrix):
+        rows, cols = matrix.shape
+        out = matrix.copy()
+        for col in prange(cols):  # Parallelize over columns
+            for i in range(rows - 1, 0, -1):  # Fisher-Yates
+                j = np.random.randint(0, i + 1)
+                out[i, col], out[j, col] = out[j, col], out[i, col]
+        return out
+
+    def shuffle_columns_numba_np(df):
+        matrix = df.to_numpy()
+        shuffled = shuffle_columns_numba_np_worker(matrix)
+        return pd.DataFrame(shuffled, columns=df.columns, index=df.index)
+
+    @njit(parallel=True)
+    def shuffle_columns_numba_np_worker(matrix):
+        rows, cols = matrix.shape
+        out = np.empty_like(matrix)
+        for col in prange(cols):
+            out[:, col] = np.random.permutation(matrix[:, col])
+        return out
+
+    def shuffle_columns_numpy(df):
+        matrix = df.to_numpy()
+        shuffled = np.empty_like(matrix)
+        for i in range(matrix.shape[1]):
+            shuffled[:, i] = np.random.permutation(matrix[:, i])
+        return pd.DataFrame(shuffled, columns=df.columns, index=df.index)
+
+    def shuffle_columns_pandas(df):
+        return df.apply(np.random.permutation, axis=0)
+
+    def time_shuffling(df, perm_method, n):
+
+        st = time.time()
+        for i in range(n):
+            perm_method(df)
+        et = time.time()
+
+        return et -st
+
+    n_permut = 20
+    print('# ### Numba fisher-yates ...')
+    t_numba_fisher = time_shuffling(df=expr_df, perm_method=shuffle_columns_numba_fisher_yates, n=n_permut)
+    print('# ### Numba fisher-yates sek per iter: ', t_numba_fisher / n_permut)
+
+    print('# ### Numba np ...')
+    t_numba_np = time_shuffling(df=expr_df, perm_method=shuffle_columns_numba_np, n=n_permut)
+    print('# ### Numba np sek per iter: ', t_numba_np / n_permut)
+
+    print('# ### Np  ...')
+    t_np = time_shuffling(df=expr_df, perm_method=shuffle_columns_numpy, n=n_permut)
+    print('# ### Np sek per iter: ', t_np / n_permut)
+
+    print('# ### Pd ...')
+    t_pd = time_shuffling(df=expr_df, perm_method=shuffle_columns_pandas, n=n_permut)
+    print('# ### Pd sek per iter: ', t_pd / n_permut)
+
+
 if __name__ == '__main__':
 
     # For GRNboost2 use: pip install dask-expr==0.5.3 distributed==2024.2.1
