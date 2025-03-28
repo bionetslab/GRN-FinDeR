@@ -1324,8 +1324,8 @@ if __name__ == '__main__':
     mwe = False
     approx_quality = False
     plot_approx_quality = False
-    debug_example0 = False
-    debug_example1 = False
+    debug_example0_flag = False
+    debug_example1_flag = False
 
     if generate_fdr_control_input:
         # ### Compute input to FDR control for all tissues (GRN, distance matrix, clustering)
@@ -1443,13 +1443,14 @@ if __name__ == '__main__':
         plt.savefig(os.path.join(os.getcwd(), 'data/Adipose_Tissue/prec_rec_001.png'), dpi=300)
         plt.close('all')
 
-    elif debug_example0:
+    elif debug_example0_flag:
         debug_exampe0()
 
-    elif debug_exampe1:
+    elif debug_example1_flag:
         debug_exampe1()
 
     else:
+        print("Running FDR comparison...")
         root_directory  = "/data/bionets/xa39zypy/gtex"
         num_clusters = list(range(100, 1001, 100))
         tissue_list = ['Liver']
