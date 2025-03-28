@@ -469,9 +469,11 @@ def run_approximate_fdr_control(
 def approximate_fdr_validation(
         root_directory: str,
         num_clusters: list[int],
+        tissue_list : list = [],
         include_tfs : bool = False,
         num_permutations: int = 1000,
-        verbosity: int = 0
+        verbosity: int = 0,
+        keep_tfs_singleton : bool = False
 ):
     import pickle
     import time
@@ -491,6 +493,9 @@ def approximate_fdr_validation(
 
     # Iterate over tissues
     for tissue, subdir in zip(tissues, subdirectories):
+        
+        if len(tissue_list)>0 and (not tissue in tissue_list):
+            continue
 
         if verbosity > 0:
             print(f'# ###### Processing tissue {tissue}...')
@@ -539,7 +544,11 @@ def approximate_fdr_validation(
                 gene_bool = [False if gene in tf_list else True for gene in distance_mat.columns]
                 dist_mat_tfs = distance_mat.loc[tf_bool, tf_bool]
                 dist_mat_genes = distance_mat.loc[gene_bool, gene_bool]
-                tfs_to_clust = cluster_genes_to_dict(distance_matrix=dist_mat_tfs, num_clusters=n)
+                if keep_tfs_singleton:
+                    # Ensure to process all TFs, by creating dummy-singleton clusters for TFs.
+                    tfs_to_clust = {tf : counter for (counter, tf) in enumerate(tf_list)}
+                else:
+                    tfs_to_clust = cluster_genes_to_dict(distance_matrix=dist_mat_tfs, num_clusters=n)
                 genes_to_clust = cluster_genes_to_dict(distance_matrix=dist_mat_genes, num_clusters=n)
             else:
                 gene_to_clust = cluster_genes_to_dict(distance_matrix=distance_mat, num_clusters=n)
@@ -1376,7 +1385,7 @@ if __name__ == '__main__':
                 num_threads=None,
                 output_path=out_p,
             )
-    if mwe:
+    elif mwe:
         example_workflow()
 
     elif approx_quality:
@@ -1441,14 +1450,17 @@ if __name__ == '__main__':
         debug_exampe1()
 
     else:
-        root_directory  = "/home/woody/iwbn/iwbn106h/gtex"
+        root_directory  = "/data/bionets/xa39zypy/gtex"
         num_clusters = list(range(100, 1001, 100))
+        tissue_list = ['Liver']
 
         approximate_fdr_validation(
             root_directory=root_directory,
             num_clusters=num_clusters,
+            tissue_list=tissue_list,
             include_tfs=True,
             num_permutations=1000,
+            keep_tfs_singleton=True,
             verbosity=1,
         )
 
