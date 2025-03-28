@@ -473,7 +473,8 @@ def approximate_fdr_validation(
         include_tfs : bool = False,
         num_permutations: int = 1000,
         verbosity: int = 0,
-        keep_tfs_singleton : bool = False
+        keep_tfs_singleton : bool = False,
+        scale_importances : bool = False
 ):
     import pickle
     import time
@@ -577,13 +578,15 @@ def approximate_fdr_validation(
                     expression_mat=expression_mat,
                     grn=original_grn,
                     gene_to_cluster=(tfs_to_clust, genes_to_clust),
-                    num_permutations=num_permutations)
+                    num_permutations=num_permutations,
+                    scale_importances=scale_importances)
             else:
                 dummy_grn = approximate_fdr(
                     expression_mat=expression_mat,
                     grn=original_grn,
                     gene_to_cluster=gene_to_clust,
-                    num_permutations=num_permutations
+                    num_permutations=num_permutations,
+                    scale_importances=scale_importances
                 )
             fdr_et = time.time()
             fdr_time = fdr_et - fdr_st
@@ -1451,7 +1454,7 @@ if __name__ == '__main__':
 
     else:
         print("Running FDR comparison...")
-        root_directory  = "/data/bionets/xa39zypy/gtex"
+        root_directory  = "/home/woody/iwbn/iwbn106h/gtex"
         num_clusters = list(range(100, 1001, 100))
         tissue_list = ['Liver']
 
@@ -1461,7 +1464,8 @@ if __name__ == '__main__':
             tissue_list=tissue_list,
             include_tfs=True,
             num_permutations=1000,
-            keep_tfs_singleton=True,
+            keep_tfs_singleton=False,
+            scale_importances=True,
             verbosity=1,
         )
 

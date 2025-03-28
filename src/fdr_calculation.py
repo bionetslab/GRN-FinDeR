@@ -15,7 +15,8 @@ def approximate_fdr(
         grn : pd.DataFrame,
         gene_to_cluster : Union[dict, tuple[dict, dict]],
         num_permutations : int = 1000,
-        grnboost2_random_seed: Union[int, None] = None
+        grnboost2_random_seed: Union[int, None] = None,
+        scale_importances : bool = False
 ) -> pd.DataFrame:
 
     if isinstance(gene_to_cluster, dict):
@@ -27,14 +28,24 @@ def approximate_fdr(
             grnboost2_random_seed=grnboost2_random_seed,
         )
     else:
-        fdr_grn = _approximate_fdr_with_tfs(
-            expression_mat=expression_mat,
-            grn=grn,
-            tf_to_cluster=gene_to_cluster[0],
-            gene_to_cluster=gene_to_cluster[1],
-            num_permutations=num_permutations,
-            grnboost2_random_seed=grnboost2_random_seed,
-        )
+        if scale_importances:
+            fdr_grn = _approximate_fdr_with_tfs_with_scaling(
+                expression_mat=expression_mat,
+                grn=grn,
+                tf_to_cluster=gene_to_cluster[0],
+                gene_to_cluster=gene_to_cluster[1],
+                num_permutations=num_permutations,
+                grnboost2_random_seed=grnboost2_random_seed,
+            )
+        else:
+            fdr_grn = _approximate_fdr_with_tfs(
+                expression_mat=expression_mat,
+                grn=grn,
+                tf_to_cluster=gene_to_cluster[0],
+                gene_to_cluster=gene_to_cluster[1],
+                num_permutations=num_permutations,
+                grnboost2_random_seed=grnboost2_random_seed,
+            )
     return fdr_grn
 
 
@@ -183,6 +194,7 @@ def _approximate_fdr_with_tfs_with_scaling(
         num_permutations: int = 1000,
         grnboost2_random_seed: Union[int, None] = None
 ) -> pd.DataFrame:
+    print("Using approx. FDR with edge scaling...")
     cluster_to_gene = _invert_gene_cluster_dictionary(gene_to_cluster)
     cluster_to_tf = _invert_gene_cluster_dictionary(tf_to_cluster)
 
