@@ -15,7 +15,8 @@ def approximate_fdr(
         grn : pd.DataFrame,
         gene_to_cluster : Union[dict, tuple[dict, dict]],
         num_permutations : int = 1000,
-        grnboost2_random_seed: Union[int, None] = None
+        grnboost2_random_seed: Union[int, None] = None,
+        scale_importances : bool = False
 ) -> pd.DataFrame:
 
     if isinstance(gene_to_cluster, dict):
@@ -27,14 +28,24 @@ def approximate_fdr(
             grnboost2_random_seed=grnboost2_random_seed,
         )
     else:
-        fdr_grn = _approximate_fdr_with_tfs(
-            expression_mat=expression_mat,
-            grn=grn,
-            tf_to_cluster=gene_to_cluster[0],
-            gene_to_cluster=gene_to_cluster[1],
-            num_permutations=num_permutations,
-            grnboost2_random_seed=grnboost2_random_seed,
-        )
+        if scale_importances:
+            fdr_grn = _approximate_fdr_with_tfs_with_scaling(
+                expression_mat=expression_mat,
+                grn=grn,
+                tf_to_cluster=gene_to_cluster[0],
+                gene_to_cluster=gene_to_cluster[1],
+                num_permutations=num_permutations,
+                grnboost2_random_seed=grnboost2_random_seed,
+            )
+        else:
+            fdr_grn = _approximate_fdr_with_tfs(
+                expression_mat=expression_mat,
+                grn=grn,
+                tf_to_cluster=gene_to_cluster[0],
+                gene_to_cluster=gene_to_cluster[1],
+                num_permutations=num_permutations,
+                grnboost2_random_seed=grnboost2_random_seed,
+            )
     return fdr_grn
 
 
@@ -175,6 +186,71 @@ def _approximate_fdr_with_tfs(
     grn_df = pd.DataFrame.from_dict(grn_transposed)
     return grn_df
 
+def _approximate_fdr_with_tfs_with_scaling(
+        expression_mat: pd.DataFrame,
+        grn: pd.DataFrame,
+        tf_to_cluster: dict,
+        gene_to_cluster: dict,
+        num_permutations: int = 1000,
+        grnboost2_random_seed: Union[int, None] = None
+) -> pd.DataFrame:
+    print("Using approx. FDR with edge scaling...")
+    cluster_to_gene = _invert_gene_cluster_dictionary(gene_to_cluster)
+    cluster_to_tf = _invert_gene_cluster_dictionary(tf_to_cluster)
+
+    # Create dict representation from CSV input.
+    grn_zipped = zip(grn['TF'].to_list(), grn['target'].to_list(), grn['importance'].to_list())
+    grn_dict = {(tf, target): [importance, 0.0, 0.0] for tf, target, importance in grn_zipped}
+
+    # Compute sum of per-target incoming feature importances for scaling shuffled edges later.
+    all_targets = set(grn['target'])
+    target_sum_dict = {target : 0.0 for target in all_targets}
+    for _, target, importance in grn_zipped:
+        target_sum_dict[target] += importance
+
+    for i in range(num_permutations):
+        # Sample representatives from each cluster.
+        tf_representatives = _draw_representatives(cluster_to_tf, 1)
+        gene_representatives = _draw_representatives(cluster_to_gene, 1)
+
+        joint_representatives = list(set(tf_representatives + gene_representatives))
+        represent_expression = expression_mat[joint_representatives].copy()
+        # Shuffle expression matrix.
+        represent_permuted = _shuffle_column_wise(df=represent_expression)
+        shuffled_grn = grnboost2(
+            expression_data=represent_permuted,
+            tf_names=tf_representatives,
+            seed=grnboost2_random_seed,
+        )
+
+        # Compute per-target importance factor sums on shuffled edges. If target does not exist
+        # in to-be-pruned GRN, we can already ignore it for efficiency reasons.
+        shuffled_target_dict = {target : 0.0 for target in set(shuffled_grn['target']) if target in all_targets}
+        for target, factor in zip(shuffled_grn['target'], shuffled_grn['importance']):
+            if target in all_targets:
+                shuffled_target_dict[target] += factor            
+
+        # Compute count values based on scaled edge importances for each shuffled edge.
+        for tf, target, factor in zip(shuffled_grn['TF'], shuffled_grn['target'], shuffled_grn['importance']):
+            if (tf, target) in grn_dict:
+                adjusted_factor = factor * (target_sum_dict[target] / shuffled_target_dict[target])
+                count_value = int(adjusted_factor >= grn_dict[(tf, target)][0])
+                # Update corresponding edge count.
+                grn_dict[(tf, target)][1] += count_value
+
+    # Compute edge-wise empirical P-values from counts.
+    grn_dict_final = {key : (val[0], val[1], (1+val[1])/(1+num_permutations)) for key, val in grn_dict.items()}
+
+    grn_transposed = {'tf': [], 'target': [], 'importance': [], 'count': [], 'pvalue': []}
+    for key, val in grn_dict_final.items():
+        grn_transposed['tf'].append(key[0])
+        grn_transposed['target'].append(key[1])
+        grn_transposed['importance'].append(val[0])
+        grn_transposed['count'].append(val[1])
+        grn_transposed['pvalue'].append(val[2])
+
+    grn_df = pd.DataFrame.from_dict(grn_transposed)
+    return grn_df
 
 def _invert_gene_cluster_dictionary(gene_to_cluster : dict):
     cluster_to_gene = dict()
