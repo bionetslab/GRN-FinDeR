@@ -3,7 +3,7 @@ import time
 import pandas as pd
 import numpy as np
 from arboreto.algo import grnboost2
-from typing import Union, List
+from typing import Union, List, Dict, Tuple
 from numba import njit, prange
 
 import random
@@ -125,66 +125,102 @@ def _approximate_fdr_no_tfs(
 def _approximate_fdr_with_tfs(
         expression_mat: pd.DataFrame,
         grn: pd.DataFrame,
-        tf_to_cluster: dict,
-        gene_to_cluster: dict,
+        tf_to_cluster: Dict[str, int],
+        gene_to_cluster: Dict[str, int],
         num_permutations: int = 1000,
         grnboost2_random_seed: Union[int, None] = None
 ) -> pd.DataFrame:
+
+    # Merge clusterings of TFs and non-TFs => All clusters (all are possible targets) in one clustering
     target_to_cluster = _merge_clusterings(tf_to_cluster, gene_to_cluster)
+
+    # Invert cluster dicts => Dict[int, List[str]]
     cluster_to_target = _invert_gene_cluster_dictionary(target_to_cluster)
     cluster_to_gene = _invert_gene_cluster_dictionary(gene_to_cluster)
     cluster_to_tf = _invert_gene_cluster_dictionary(tf_to_cluster)
 
-    # Create dict representation from CSV input.
+    # Create GRN dict from table input: Dict[Tuple[str, str], List[float, float]] = {(TF, target): [importance, count]}
     grn_zipped = zip(grn['TF'].to_list(), grn['target'].to_list(), grn['importance'].to_list())
-    grn_dict = {(tf, target): (importance, 0.0, 0.0) for tf, target, importance in grn_zipped}
-
-    # Edge count structure on cluster level with structure {(TFclusterID, TargetclusterID) : count}.
-    cluster_cluster_counts = {
-        cluster_edge: 0.0 for cluster_edge in itertools.product(
-            list(cluster_to_tf.keys()),
-            list(cluster_to_target.keys())
-        )
-    }
-
+    grn_dict = {(tf, target): [importance, 0.0] for tf, target, importance in grn_zipped}
     for i in range(num_permutations):
         # Sample representatives from each cluster.
         tf_representatives = _draw_representatives(cluster_to_tf, 1)
         gene_representatives = _draw_representatives(cluster_to_gene, 1)
 
+        # Subset the expression matrix to the representatives
         joint_representatives = list(set(tf_representatives + gene_representatives))
         represent_expression = expression_mat[joint_representatives].copy()
-        # Shuffle expression matrix.
+
+        # Shuffle expression matrix column wise
         represent_permuted = _shuffle_column_wise(df=represent_expression)
+
+        # Compute a GRN from the shuffled expression matrix
         shuffled_grn = grnboost2(
             expression_data=represent_permuted,
             tf_names=tf_representatives,
             seed=grnboost2_random_seed,
         )
 
-        # Compute adjusted count values for each shuffled edge.
-        for tf, target, factor in zip(shuffled_grn['TF'], shuffled_grn['target'], shuffled_grn['importance']):
-            if (tf, target) in grn_dict:
-                count_value = int(factor >= grn_dict[(tf, target)][0])
-                # Update corresponding cluster counts.
-                cluster_cluster_counts[(tf_to_cluster[tf], target_to_cluster[target])] += count_value
+        grn_dict = _get_counts(
+            input_grn_dict=grn_dict,
+            shuffled_grn=shuffled_grn,
+            target_to_cluster=target_to_cluster,
+            cluster_to_target=cluster_to_target,
+        )
 
-    # Map cluster-cluster Pvalues into original genes.
-    for key in grn_dict.keys():
-        cluster_tuple = (tf_to_cluster[key[0]], target_to_cluster[key[1]])
-        p_value = (cluster_cluster_counts[cluster_tuple] + 1) / (num_permutations + 1)
-        grn_dict[key] = (grn_dict[key][0], cluster_cluster_counts[cluster_tuple], p_value)
-
-    grn_transposed = {'tf': [], 'target': [], 'importance': [], 'count': [], 'pvalue': []}
+    # Write results to dataframe
+    tfs = []
+    targets = []
+    importances = []
+    counts = []
     for key, val in grn_dict.items():
-        grn_transposed['tf'].append(key[0])
-        grn_transposed['target'].append(key[1])
-        grn_transposed['importance'].append(val[0])
-        grn_transposed['count'].append(val[1])
-        grn_transposed['pvalue'].append(val[2])
+        tfs.append(key[0])
+        targets.append(key[1])
+        importances.append(val[0])
+        counts.append(val[1])
 
-    grn_df = pd.DataFrame.from_dict(grn_transposed)
+    grn_df = pd.DataFrame()
+    grn_df['TF'] = tfs
+    grn_df['target'] = targets
+    grn_df['importance'] = importances
+    grn_df['count'] = counts
+
+    # Compute empirical p-values
+    grn_df['pvalue'] = (np.array(counts) + 1) / (num_permutations + 1)
+
     return grn_df
+
+
+def _get_counts(
+        input_grn_dict: Dict[Tuple[str, str], Tuple[float, float]],
+        shuffled_grn: pd.DataFrame,
+        target_to_cluster: Dict[str, int],  # should contain all clusters (TF and non-TF)
+        cluster_to_target: Dict[int, List[str]],
+) -> Dict[Tuple[str, str], Tuple[float, float]]:
+
+    # Iterate over shuffled GRN (consists of representatives)
+    for tf, target, importance in zip(shuffled_grn['TF'], shuffled_grn['target'], shuffled_grn['importance']):
+
+        # Get the cluster id of the TF, get all other genes in the cluster
+        tf_cluster = target_to_cluster[tf]
+        tf_cluster_genes = cluster_to_target[tf_cluster]
+
+        # Get the cluster id of the target, get all other genes in the cluster
+        target_cluster = target_to_cluster[target]
+        target_cluster_genes = cluster_to_target[target_cluster]
+
+        # Iterate over all possible edges between the two clusters
+        for tf_cluster_gene in tf_cluster_genes:
+            for target_cluster_gene in target_cluster_genes:
+
+                edge = (tf_cluster_gene, target_cluster_gene)
+
+                # If edge exists in input GRN and importance shuffled >= importance input, then raise count by one
+                if edge in input_grn_dict:
+                    input_grn_dict[edge][1] += int(importance >= input_grn_dict[edge][0])
+
+    return input_grn_dict
+
 
 def _approximate_fdr_with_tfs_with_scaling(
         expression_mat: pd.DataFrame,
