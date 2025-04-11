@@ -474,7 +474,8 @@ def approximate_fdr_validation(
         num_permutations: int = 1000,
         verbosity: int = 0,
         keep_tfs_singleton : bool = False,
-        scale_importances : bool = False
+        scale_importances : bool = False,
+        use_cluster_medoids : bool = False
 ):
     import pickle
     import time
@@ -569,6 +570,28 @@ def approximate_fdr_validation(
                 with open(os.path.join(subdir, f'clustering_{n}.pkl'), 'wb') as f:
                     pickle.dump(gene_to_clust, f)
 
+            cluster_medoid_dict = None
+            if use_cluster_medoids:
+                if include_tfs:
+                    # Iterate over all target clusters and compute medoid based on Wasserstein dist.
+                    cluster_medoid_dict = {}
+                    cluster_gene_dict = {}
+                    for gene, cluster in genes_to_clust.items():
+                        if cluster in cluster_gene_dict:
+                            cluster_gene_dict[cluster].append(gene)
+                        else:
+                            cluster_gene_dict[cluster] = [gene]
+                    for cluster, gene_list in cluster_gene_dict.items():
+                        # Subset distance matrix to cluster gene set.
+                        subset_bool = [True if gene in gene_list else False for gene in distance_mat.columns]
+                        subset_dists = distance_mat.loc[subset_bool, subset_bool]
+                        distance_sums = subset_dists.sum(axis=1)
+                        medoid_gene = distance_sums.idxmin()
+                        cluster_medoid_dict[cluster] = medoid_gene
+                    # TODO: Implement medoid also for TF clusters.
+                else:
+                    raise ValueError("Medoid representatives not yet implemented for inclusive TF clustering!")
+            
             if verbosity > 0:
                 print(f'# ### Approximate FDR, n = {n} ...')
             fdr_st = time.time()
@@ -579,7 +602,8 @@ def approximate_fdr_validation(
                     grn=original_grn,
                     gene_to_cluster=(tfs_to_clust, genes_to_clust),
                     num_permutations=num_permutations,
-                    scale_importances=scale_importances)
+                    scale_importances=scale_importances,
+                    cluster_medoid_dict=cluster_medoid_dict)
             else:
                 dummy_grn = approximate_fdr(
                     expression_mat=expression_mat,
@@ -1464,9 +1488,10 @@ if __name__ == '__main__':
             tissue_list=tissue_list,
             include_tfs=True,
             num_permutations=1000,
-            keep_tfs_singleton=False,
-            scale_importances=True,
+            keep_tfs_singleton=True,
+            scale_importances=False,
             verbosity=1,
+            use_cluster_medoids=True
         )
 
     print("done")

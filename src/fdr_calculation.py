@@ -16,7 +16,8 @@ def approximate_fdr(
         gene_to_cluster : Union[dict, tuple[dict, dict]],
         num_permutations : int = 1000,
         grnboost2_random_seed: Union[int, None] = None,
-        scale_importances : bool = False
+        scale_importances : bool = False,
+        cluster_medoid_dict : dict = None
 ) -> pd.DataFrame:
 
     if isinstance(gene_to_cluster, dict):
@@ -45,6 +46,7 @@ def approximate_fdr(
                 gene_to_cluster=gene_to_cluster[1],
                 num_permutations=num_permutations,
                 grnboost2_random_seed=grnboost2_random_seed,
+                cluster_medoid_dict=cluster_medoid_dict
             )
     return fdr_grn
 
@@ -128,7 +130,8 @@ def _approximate_fdr_with_tfs(
         tf_to_cluster: Dict[str, int],
         gene_to_cluster: Dict[str, int],
         num_permutations: int = 1000,
-        grnboost2_random_seed: Union[int, None] = None
+        grnboost2_random_seed: Union[int, None] = None,
+        cluster_medoid_dict : dict = None
 ) -> pd.DataFrame:
 
     # Merge clusterings of TFs and non-TFs => All clusters (all are possible targets) in one clustering
@@ -143,9 +146,17 @@ def _approximate_fdr_with_tfs(
     grn_zipped = zip(grn['TF'].to_list(), grn['target'].to_list(), grn['importance'].to_list())
     grn_dict = {(tf, target): [importance, 0.0] for tf, target, importance in grn_zipped}
     for i in range(num_permutations):
+        # Extract medoid representatives if precomputed.
+        if not cluster_medoid_dict is None:
+            # Since for now, only target medoids can be used (works currently, since we are for
+            # now NOT clustering TFs anyway), TFs still need to be drawn here.
+            # TODO: Implement medoid precomputation also for TFs.
+            tf_representatives = _draw_representatives(cluster_to_tf, 1)
+            gene_representatives = [medoid for _, medoid in cluster_medoid_dict.items()]
         # Sample representatives from each cluster.
-        tf_representatives = _draw_representatives(cluster_to_tf, 1)
-        gene_representatives = _draw_representatives(cluster_to_gene, 1)
+        else:
+            tf_representatives = _draw_representatives(cluster_to_tf, 1)
+            gene_representatives = _draw_representatives(cluster_to_gene, 1)
 
         # Subset the expression matrix to the representatives
         joint_representatives = list(set(tf_representatives + gene_representatives))
