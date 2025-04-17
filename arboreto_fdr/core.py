@@ -347,6 +347,56 @@ def retry(fn, max_retries=10, warning_msg=None, fallback_result=None):
 _GRN_SCHEMA = make_meta({'TF': str, 'target': str, 'importance': float, 'counter': int})
 _META_SCHEMA = make_meta({'target': str, 'n_estimators': int})
 
+# ### TODO: infer partial network for original, medoid, and random
+#       - infer_partial_network for each case
+
+def count_computation_medoid_representative(
+        regressor_type,
+        regressor_kwargs,
+        tf_matrix,
+        tf_matrix_gene_names,
+        target_gene_name,
+        target_gene_expression,
+        partial_input_grn: dict[str, tuple],  # todo: input grn induced by all genes from the medoids cluster
+        include_meta=False,
+        early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
+        seed=DEMON_SEED,
+        n_permutations = DEFAULT_PERMUTATIONS,
+
+):
+    # TODO
+    pass
+
+
+def count_computation_sampled_representative(
+        regressor_type,
+        regressor_kwargs,
+        tf_matrix,
+        tf_matrix_gene_names,
+        target_gene_name,
+        target_gene_expression,  # todo: gene expr matrix of all cluster members
+        partial_input_grn: dict[str, tuple],  # todo: input grn induced by all genes from the cluster
+        include_meta=False,
+        early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
+        seed=DEMON_SEED,
+        n_permutations = DEFAULT_PERMUTATIONS,
+
+):
+    # TODO:
+    #   - Iterate over the targets (current_permut % n_targets) ~ unif at random
+    pass
+
+
+def _count_helper(
+        shuffled_grn: pd.DataFrame,
+        partial_input_grn: dict[str, tuple],
+):
+    # TODO:
+    #  - Convert shuffled_grn to dict format (for faster access)
+    #  - Loop over partial input grn:
+    #    - If TF(-representative) edge is in shuffled_grn: compare importance, raise count
+    pass
+
 def infer_partial_network(regressor_type,
                           regressor_kwargs,
                           tf_matrix,
@@ -385,6 +435,9 @@ def infer_partial_network(regressor_type,
 
         (clean_tf_matrix, clean_tf_matrix_gene_names) = clean(tf_matrix, tf_matrix_gene_names, target_gene_name)
 
+        # ### TODO: remove start (input grn is part of input)
+        #       - Transform input GRN to dict format beforehand
+
         # special case in which only a single TF is passed and the target gene
         # here is the same as the TF (clean_tf_matrix is empty after cleaning):
         if clean_tf_matrix.size==0:
@@ -402,6 +455,8 @@ def infer_partial_network(regressor_type,
         count = {}
         for tf, importance in zip(links_df['TF'], links_df['importance']):
             count[tf] = {'score': importance, 'counter': 0}
+
+        # ### TODO: remove end (input grn is part of input)
 
         for _ in range(n_permutations):
             exp = np.random.permutation(target_gene_expression)
@@ -613,16 +668,26 @@ def create_graph(expression_matrix, # Subset medioids
 
         # Pass subset of GRN which is represented by the medoids
         if include_meta:
-            delayed_link_df, delayed_meta_df = delayed(infer_partial_network, pure=True, nout=2)(
-                regressor_type, regressor_kwargs,
-                future_tf_matrix, future_tf_matrix_gene_names,
-                target_gene_name, target_gene_expression, include_meta, early_stop_window_length, seed, n_permutations, output_directory, bootstrap_fdr_fraction)
+            delayed_link_df, delayed_meta_df = delayed(count_computation_medoid, pure=True, nout=2)(
+                regressor_type,
+                regressor_kwargs,
+                future_tf_matrix,
+                future_tf_matrix_gene_names,
+                target_gene_name,
+                target_gene_expression,
+                include_meta,
+                early_stop_window_length,
+                seed,
+                n_permutations,
+                output_directory,
+                bootstrap_fdr_fraction
+            )
 
             if delayed_link_df is not None:
                 delayed_link_dfs.append(delayed_link_df)
                 delayed_meta_dfs.append(delayed_meta_df)
         else:
-            delayed_link_df = delayed(infer_partial_network, pure=True)(
+            delayed_link_df = delayed(count_computation_medoid, pure=True)(
                 regressor_type, regressor_kwargs,
                 future_tf_matrix, future_tf_matrix_gene_names,
                 target_gene_name, target_gene_expression, include_meta, early_stop_window_length, seed, n_permutations, output_directory, bootstrap_fdr_fraction)
