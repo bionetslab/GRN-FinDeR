@@ -1314,7 +1314,423 @@ def main_time_shuffling():
     print('# ### Pd sek per iter: ', t_pd / n_permut)
 
 
+def approx_fdr_scanpy_data_mwe():
+
+    import os
+    import time
+    import pickle
+    import warnings
+    import pandas as pd
+    import matplotlib.pyplot as plt
+
+    from src.utils import DebugDataSuite
+    from arboreto.algo import grnboost2
+    from src.distance_matrix import compute_wasserstein_distance_matrix
+    from src.fdr_calculation import classical_fdr, approximate_fdr
+    from src.clustering import cluster_genes_to_dict
+    from src.utils import compute_evaluation_metrics, plot_metric
+
+    # ### Set flags ####################################################################################################
+    save_p = os.path.join(os.getcwd(), 'results/tfs_not_clustered')
+    os.makedirs(save_p, exist_ok=True)
+
+    process_data = False
+    downsampling_frac_cells = 0.1
+    downsampling_frac_genes = 0.2
+    # cells: 0.1, genes: 0.2; 263 cells, 373 genes, 25 TFs
+    # No ds: 2638 cells, 1868 genes, 159 TFs
+
+    compute_input_grn = False
+    use_tf_info = True
+
+    compute_distance_mat = False
+
+    compute_classical_fdr = False
+    n_permutations = 1000
+
+    compute_clusterings = False
+    n_clusters_clustering = list(range(20, 101, 20)) + list(range(125, 326, 25)) # + [348, ]
+    cluster_tfs = False
+
+    compute_approximate_fdr = False
+    n_clusters_approx_fdr = list(range(20, 101, 20)) + list(range(125, 326, 25)) # + [348, ]
+
+    evaluate = True
+    fdr_thresholds = [0.01, 0.05]
+
+    ####################################################################################################################
+
+    # Load, process, and save data
+    if process_data:
+        dds = DebugDataSuite(cache_dir=save_p, verbosity=1)
+        dds.load_and_preprocess()
+        dds.downsample_scale(fraction_cells=downsampling_frac_cells, fraction_genes=downsampling_frac_genes, seed=42)
+        expression_mat = dds.expression_mat_.copy()
+    else:
+        expression_mat = pd.read_csv(os.path.join(save_p, 'pbmc3k_prepr_downsampled.csv'), index_col=0)
+
+    # Compute the input grn
+    if compute_input_grn:
+
+        if use_tf_info:
+            # Download the TF list
+            if not os.path.exists(os.path.join(save_p, 'allTFs_hg38.txt')):
+                url = 'https://resources.aertslab.org/cistarget/tf_lists/allTFs_hg38.txt'
+                os.system(f'wget -P {save_p} {url}')
+
+            # Load the TF list
+            with open(os.path.join(save_p, 'allTFs_hg38.txt'), 'r') as file:
+                tfs = [line.strip() for line in file]
+                genes = expression_mat.columns.tolist()
+                intersection = list(set(tfs) & set(genes))
+
+                n_genes = len(genes)
+                n_tfs = len(intersection)
+                print(f'# ### Out of the {n_genes} genes {n_tfs} ({n_tfs / n_genes * 100:.2f}%) are TFs')
+        else:
+            intersection = 'all'
+
+        print('# ### Inferring input GRN ...')
+        st_input_grn = time.time()
+        input_grn = grnboost2(
+            expression_data=expression_mat,
+            tf_names=intersection,
+            verbose=True,
+            seed=42
+        )
+        et_input_grn = time.time()
+        print(f'# took {et_input_grn - st_input_grn} seconds')
+
+        print(expression_mat.shape)
+        print(len(intersection))
+
+        input_grn.to_csv(os.path.join(save_p, 'input_grn.csv'))
+
+    else:
+        input_grn = pd.read_csv(os.path.join(save_p, 'input_grn.csv'), index_col=0)
+
+    # Compute the distance matrix
+    if compute_distance_mat:
+        print('# ### Computing Wasserstein distance matrix...')
+        st_dist_mat = time.time()
+        distance_mat = compute_wasserstein_distance_matrix(expression_mat=expression_mat, num_threads=-1)
+        et_dist_mat = time.time()
+        print(f'# took {et_dist_mat - st_dist_mat} seconds')
+        distance_mat.to_csv(os.path.join(save_p, 'distance_mat.csv'))
+    else:
+        distance_mat = pd.read_csv(os.path.join(save_p, 'distance_mat.csv'), index_col=0)
+
+    # Compute classical FDR
+    if compute_classical_fdr:
+
+        if use_tf_info:
+            # Load the TF list
+            with open(os.path.join(save_p, 'allTFs_hg38.txt'), 'r') as file:
+                tfs = [line.strip() for line in file]
+
+                genes = expression_mat.columns.tolist()
+                intersection = list(set(tfs) & set(genes))
+        else:
+            intersection = 'all'
+
+        print('# ### Performing classical FDR ...')
+        st_classical_fdr = time.time()
+        ground_truth_grn = classical_fdr(
+            expression_mat=expression_mat,
+            grn=input_grn,
+            tf_names=intersection,
+            num_permutations=n_permutations,
+            grnboost2_random_seed=42,
+            verbosity=1,
+        )
+        et_classical_fdr = time.time()
+        t_classical_fdr = et_classical_fdr - st_classical_fdr
+        print(f'# took {t_classical_fdr} seconds')
+
+        time_df_classical = pd.DataFrame(columns=['total', 'per_iter'])
+        time_df_classical.loc['classical', :] = [t_classical_fdr, t_classical_fdr / n_permutations]
+        time_df_classical.to_csv(os.path.join(save_p, 'time_classical_fdr.csv'))
+
+        ground_truth_grn.to_csv(os.path.join(save_p, 'ground_truth_grn.csv'))
+    else:
+        ground_truth_grn = pd.read_csv(os.path.join(save_p, 'ground_truth_grn.csv'), index_col=0)
+
+    if compute_clusterings:
+        if use_tf_info:
+
+            # Subset distance matrix
+            with open(os.path.join(save_p, 'allTFs_hg38.txt'), 'r') as file:
+                tfs = [line.strip() for line in file]
+                genes = expression_mat.columns.tolist()
+                intersection = list(set(tfs) & set(genes))
+
+            tf_bool = [True if gene in intersection else False for gene in distance_mat.columns]
+            gene_bool = [not b for b in tf_bool]
+            distance_mat_tfs = distance_mat.loc[tf_bool, tf_bool]
+            distance_mat_non_tfs = distance_mat.loc[gene_bool, gene_bool]
+
+            clusterings_tfs = []
+            clusterings_non_tfs = []
+
+            for n in n_clusters_clustering:
+
+                n_leq_n_tfs = n <= len(intersection)
+
+                if not n_leq_n_tfs:
+                    warnings.warn(f"Number of clusters > number of TFs. Not clustering TFs.")
+
+                if cluster_tfs and n_leq_n_tfs:
+                    tfs_to_clust = cluster_genes_to_dict(distance_matrix=distance_mat_tfs, num_clusters=n)
+                else:
+                    tfs_to_clust = {tfn: i for i, tfn in enumerate(intersection)}  # No clustering
+
+                non_tfs_to_clust = cluster_genes_to_dict(distance_matrix=distance_mat_non_tfs, num_clusters=n)
+
+                clusterings_tfs.append(tfs_to_clust)
+                clusterings_non_tfs.append(non_tfs_to_clust)
+
+                cluster_p = os.path.join(save_p, 'clusterings')
+                os.makedirs(cluster_p, exist_ok=True)
+                with open(os.path.join(cluster_p, f'{n}_clusters_tfs{'_not_clustered' if not cluster_tfs else ''}.pkl'), 'wb') as f:
+                    pickle.dump(tfs_to_clust, f)
+
+                with open(os.path.join(cluster_p, f'{n}_clusters_non_tfs.pkl'), 'wb') as f:
+                    pickle.dump(non_tfs_to_clust, f)
+
+        else:
+
+            clusterings = []
+
+            for n in n_clusters_clustering:
+                gene_to_clust = cluster_genes_to_dict(distance_matrix=distance_mat, num_clusters=n)
+
+                clusterings.append(gene_to_clust)
+
+                cluster_p = os.path.join(save_p, 'clusterings')
+                os.makedirs(cluster_p, exist_ok=True)
+                with open(os.path.join(cluster_p, f'{n}_clusters.pkl'), 'wb') as f:
+                    pickle.dump(gene_to_clust, f)
+    else:
+
+        cluster_p = os.path.join(save_p, 'clusterings')
+
+        if use_tf_info:
+
+            clusterings_tfs = []
+            clusterings_non_tfs = []
+
+            for n in n_clusters_clustering:
+
+                with open(
+                        os.path.join(
+                            cluster_p, f'{n}_clusters_tfs{'_not_clustered' if not cluster_tfs else ''}.pkl'
+                        ),
+                        'rb'
+                ) as f:
+                    tfs_to_clust = pickle.load(f)
+                clusterings_tfs.append(tfs_to_clust)
+
+                with open(os.path.join(cluster_p, f'{n}_clusters_non_tfs.pkl'), 'rb') as f:
+                    non_tfs_to_clust = pickle.load(f)
+                clusterings_non_tfs.append(non_tfs_to_clust)
+
+        else:
+            clusterings = []
+            for n in n_clusters_clustering:
+                with open(os.path.join(cluster_p, f'{n}_clusters.pkl'), 'rb') as f:
+                    gene_to_clust = pickle.load(f)
+                clusterings.append(gene_to_clust)
+
+    if compute_approximate_fdr:
+
+        if use_tf_info:
+            clusterings_tfs_fdr = []
+            clusterings_non_tfs_fdr = []
+            n_clusters_approx_fdr_new = []
+            for i, n in enumerate(n_clusters_clustering):
+                if n in n_clusters_approx_fdr:
+                    clusterings_tfs_fdr.append(clusterings_tfs[i])
+                    clusterings_non_tfs_fdr.append(clusterings_non_tfs[i])
+                    n_clusters_approx_fdr_new.append(n)
+        else:
+            clusterings_fdr = []
+            n_clusters_approx_fdr_new = []
+            for i, n in enumerate(n_clusters_clustering):
+                if n in n_clusters_approx_fdr:
+                    clusterings_fdr.append(clusterings[i])
+                    n_clusters_approx_fdr_new.append(n)
+
+        for n in n_clusters_approx_fdr:
+            if n not in n_clusters_approx_fdr_new:
+                print(f'No clustering computed for n = {n}. Cannot compute approximate FDR.')
+
+        approx_fdr_grn = ground_truth_grn.copy()
+        time_df_approx = pd.DataFrame(columns=['total', 'per_iter'])
+        for i, n in enumerate(n_clusters_approx_fdr_new):
+            print(f'# ### Approx. FDR control with {n} clusters ...')
+            if use_tf_info:
+                cluster_input = (clusterings_tfs_fdr[i], clusterings_non_tfs_fdr[i])
+            else:
+                cluster_input = clusterings_fdr[i]
+
+            # Perform FDR control
+            st = time.time()
+            dummy_grn = approximate_fdr(
+                expression_mat=expression_mat,
+                grn=input_grn,
+                gene_to_cluster=cluster_input,
+                num_permutations=n_permutations,
+                grnboost2_random_seed=42
+            )
+            et = time.time()
+            t_approx = et - st
+            print(f'# took {t_approx} seconds')
+
+            time_df_approx.loc[f'{n}_clusters', :] = [t_approx, t_approx / n_permutations]
+            time_df_approx.to_csv(os.path.join(save_p, 'time_approx_fdr.csv'))
+
+            # Append results to groundtruth GRN
+            approx_fdr_grn[f'count_{n}'] = dummy_grn['count'].to_numpy()
+            approx_fdr_grn[f'pvalue_{n}'] = dummy_grn['pvalue'].to_numpy()
+
+            approx_fdr_grn.to_csv(os.path.join(save_p, 'approx_fdr_grn.csv'))
+
+    else:
+        n_clusters_approx_fdr_new = []
+        for i, n in enumerate(n_clusters_clustering):
+            if n in n_clusters_approx_fdr:
+                n_clusters_approx_fdr_new.append(n)
+        approx_fdr_grn = pd.read_csv(os.path.join(save_p, 'approx_fdr_grn.csv'), index_col=0)
+
+    if evaluate:
+        res_df = compute_evaluation_metrics(
+            grn=approx_fdr_grn,
+            fdr_thresholds=fdr_thresholds,
+            n_clusters=None,  # Fet from df
+        )
+
+        with open(os.path.join(save_p, 'allTFs_hg38.txt'), 'r') as file:
+            tfs = [line.strip() for line in file]
+
+            genes = expression_mat.columns.tolist()
+            intersection = list(set(tfs) & set(genes))
+
+        save_p_plots = os.path.join(save_p, 'plots')
+        os.makedirs(save_p_plots, exist_ok=True)
+
+        cmap = plt.get_cmap('tab10')
+        colors = [cmap(i) for i in range(len(fdr_thresholds))]
+
+        for metric in ['mse', 'acc', 'prec', 'rec', 'f1']:
+            fig, ax = plt.subplots()
+            for i, (fdr_threshold, col) in enumerate(zip(fdr_thresholds, colors)):
+                plot_metric(
+                    res_df=res_df,
+                    fdr_threshold=fdr_threshold,
+                    metric=metric,
+                    n_tfs=len(intersection) if i == len(fdr_thresholds) - 1 else None,
+                    line_color=col,
+                    ax=ax
+                )
+            plt.savefig(os.path.join(save_p_plots, f'{metric}.png'))
+            plt.close('all')
+
+
+
+
+
 if __name__ == '__main__':
+
+    # Todo: when classical is done for not downsampled, stop and restart with other n clusters
+    approx_fdr_scanpy_data_mwe()
+
+    # import pandas as pd
+    # grn0 = pd.read_csv('results/tfs_not_clustered/approx_fdr_grn_0.csv', index_col=0)
+    # grn1 = pd.read_csv('results/tfs_not_clustered/approx_fdr_grn_1.csv', index_col=0)
+    # grn = pd.concat([grn0, grn1.iloc[:, 6:]], axis=1)
+    # grn.to_csv('results/tfs_not_clustered/approx_fdr_grn.csv')
+
+    quit()
+
+    import os
+    import pickle
+    import pandas as pd
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    grn = pd.read_csv('results/tfs_not_clustered/approx_fdr_grn.csv', index_col=0)
+
+    sp = './results/tfs_not_clustered/plots/'
+    os.makedirs(sp, exist_ok=True)
+
+    fig ,ax = plt.subplots(dpi=300)
+    ax.scatter(
+        grn['importance'].to_numpy(),
+        -np.log10(grn['p_value'].to_numpy()),
+        s=11,
+        c='skyblue',
+        edgecolors='black',
+        linewidth=0.5,
+    )
+    ax.set_xlabel('Importance')
+    ax.set_ylabel('- log10(p_value)')
+    plt.savefig(sp + 'scatter.png', dpi=300)
+    plt.close('all')
+
+    fig, ax = plt.subplots(dpi=300)
+    ax.hist(grn['p_value'].to_numpy(), bins=30, color='skyblue', edgecolor='black')
+    ax.set_xlabel('p_value')
+    ax.set_ylabel('count')
+    plt.savefig(sp + 'hist.png', dpi=300)
+    plt.close('all')
+
+    for i in list(range(20, 101, 20)) + list(range(125, 326, 25)):
+        fig, ax = plt.subplots(dpi=300)
+        ax.hist(grn[f'pvalue_{i}'].to_numpy(), bins=30, color='skyblue', edgecolor='black')
+        ax.set_xlabel('p_value')
+        ax.set_ylabel('count')
+        plt.savefig(sp + f'hist_{i}.png', dpi=300)
+        plt.close('all')
+
+    for i in list(range(20, 101, 20)) + list(range(125, 326, 25)):
+        fig, ax = plt.subplots(dpi=300)
+        ax.scatter(
+            grn['p_value'].to_numpy(),
+            grn[f'pvalue_{i}'].to_numpy(),
+            s=11,
+            c='skyblue',
+            edgecolors='black',
+            linewidth=0.5,
+        )
+        ax.set_xlabel('p-val ground truth')
+        ax.set_ylabel(f'p-val approx {i}')
+        plt.savefig(sp + f'scatter_pval_{i}.png', dpi=300)
+        plt.close('all')
+
+    fig, ax = plt.subplots(dpi=300)
+
+    cmap = plt.get_cmap('magma')
+
+    for j, i in enumerate(list(range(20, 101, 20)) + list(range(125, 326, 25)) + [348, ]):
+        with open(f'./results/tfs_not_clustered/clusterings/{i}_clusters_non_tfs.pkl', 'rb') as f:
+            clustering = pickle.load(f)
+
+        labels = [val for _, val in clustering.items()]
+
+        from collections import Counter
+        counts = sorted([val for _, val in Counter(labels).items()])
+
+        ax.plot(list(range(len(counts))), counts, c=cmap(1/(j + 1)), label=f'n_{i}')
+
+    ax.set_xlabel('cluster')
+    ax.set_ylabel('n genes')
+    plt.legend()
+    plt.savefig(sp + 'cluster_sizes.png', dpi=300)
+    plt.close('all')
+
+    print('done')
+
+    quit()
 
     # For GRNboost2 use: pip install dask-expr==0.5.3 distributed==2024.2.1
 

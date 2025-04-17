@@ -1,5 +1,8 @@
 
+import os
+import numpy as np
 import pandas as pd
+import scanpy as sc
 import matplotlib.pyplot as plt
 
 from typing import Union, List, Literal
@@ -91,24 +94,120 @@ def plot_metric(
 
     ax.plot(
         n_clusters, res_df_subset.loc[metric],
-        c='b', label=f'{metric}, thresh. {fdr_threshold}', linewidth=1.0, marker='o'
+        c=line_color, label=f'{metric}, thresh. {fdr_threshold}', linewidth=1.0, marker='o'
     )
     ax.set_ylabel(metric)
     ax.set_xlabel('n clusters')
     if n_tfs is not None:
-        ax.axvline(x=n_tfs, color=line_color, linestyle='--', label='number of TFs')
+        ax.axvline(x=n_tfs, color='r', linestyle='--', label='number of TFs')
     plt.legend()
 
     return ax
 
 
+class DebugDataSuite:
+    def __init__(self, cache_dir: str, verbosity: int = 0):
+        super(DebugDataSuite, self).__init__()
+        self.cache_dir = cache_dir
+        self.verbosity = verbosity
+
+        self.adata_ = None
+        self.expression_mat_ = None
+
+    def load_and_preprocess(self):
+        # Set datasetdir variable for scanpy
+        os.makedirs(self.cache_dir, exist_ok=True)
+        sc.settings.datasetdir = self.cache_dir
+
+        # Download raw pbmc3k data set (https://scanpy.readthedocs.io/en/stable/generated/scanpy.datasets.pbmc3k.html)
+        self.adata_ = sc.datasets.pbmc3k()
+
+        if self.verbosity >= 1:
+            print(f'# ### adata raw:\n{self.adata_}\n')
+
+        # Preprocess according to: https://scanpy.readthedocs.io/en/stable/tutorials/basics/clustering-2017.html
+        self.adata_.var_names_make_unique()
+        sc.pp.filter_cells(self.adata_, min_genes=200)
+        sc.pp.filter_genes(self.adata_, min_cells=3)
+
+        # Annotate the group of mitochondrial genes as "mt"
+        self.adata_.var['mt'] = self.adata_.var_names.str.startswith('MT-')
+        sc.pp.calculate_qc_metrics(
+            self.adata_, qc_vars=['mt'], percent_top=None, log1p=False, inplace=True
+        )
+
+        self.adata_ = self.adata_[self.adata_.obs.n_genes_by_counts < 2500, :].copy()
+        self.adata_ = self.adata_[self.adata_.obs.pct_counts_mt < 5, :].copy()
+
+        sc.pp.log1p(self.adata_)
+
+        sc.pp.highly_variable_genes(self.adata_, min_mean=0.0125, max_mean=3, min_disp=0.5)
+
+        self.adata_.raw = self.adata_.copy()
+
+        self.adata_ = self.adata_[:, self.adata_.var.highly_variable].copy()
+
+        sc.pp.regress_out(self.adata_, ['total_counts', 'pct_counts_mt'])
+
+        self.adata_.write_h5ad(os.path.join(self.cache_dir, 'pbmc3k_preprocessed.h5ad'))
+
+        if self.verbosity >= 1:
+            print(f'# ### adata preprocessed:\n{self.adata_}\n')
 
 
+    def downsample_scale(self, fraction_cells: float, fraction_genes: float, seed: int = 42):
+
+        if fraction_cells < 1.0:
+
+            if self.verbosity >= 1:
+                print(f'# ### n cells before downsampling:\n{self.adata_.n_obs}\n')
+
+            self.adata_ = DebugDataSuite.downsample_anndata(
+                adata=self.adata_, fraction=fraction_cells, axis=0, seed=seed
+            )
+
+            if self.verbosity >= 1:
+                print(f'# ### n cells after downsampling:\n{self.adata_.n_obs}\n')
+
+        if fraction_genes < 1.0:
+            if self.verbosity >= 1:
+                print(f'# ### n genes before downsampling:\n{self.adata_.n_vars}\n')
+
+            self.adata_ = DebugDataSuite.downsample_anndata(
+                adata=self.adata_, fraction=fraction_genes, axis=1, seed=seed
+            )
+
+            if self.verbosity >= 1:
+                print(f'# ### n genes after downsampling:\n{self.adata_.n_vars}\n')
+
+        sc.pp.scale(self.adata_, max_value=fraction_cells)
+
+        self.adata_.write_h5ad(os.path.join(self.cache_dir, 'pbmc3k_prepr_downsampled.h5ad'))
+
+        self.expression_mat_ = self.adata_.to_df()
+
+        self.expression_mat_.to_csv(os.path.join(self.cache_dir, 'pbmc3k_prepr_downsampled.csv'))
 
 
+    @staticmethod
+    def downsample_anndata(adata: sc.AnnData, fraction: float, axis: int, seed: int = 42):
 
+        np.random.seed(seed)
 
+        n_start = adata.shape[axis]
 
+        n_sample = int(n_start * fraction)
+
+        indices = np.random.choice(n_start, size=n_sample, replace=False)
+
+        if axis == 0:
+            adata = adata[indices, :].copy()
+        elif axis == 1:
+            adata = adata[:, indices].copy()
+        else:
+            raise ValueError(f'axis must be 0 or 1, but got {axis}')
+
+        return adata
 
 
 
