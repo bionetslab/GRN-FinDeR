@@ -9,6 +9,7 @@ import pandas as pd
 import logging
 
 import scipy
+from requests.packages import target
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor, ExtraTreesRegressor
 from dask import delayed
 from dask.dataframe import from_delayed
@@ -359,7 +360,7 @@ def count_computation_medoid_representative(
         tf_matrix_gene_names,
         target_gene_name,
         target_gene_expression,
-        partial_input_grn: dict[str, tuple],  # todo: input grn induced by all genes from the medoids cluster
+        partial_input_grn: dict,
         include_meta=False,
         early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
         seed=DEMON_SEED,
@@ -787,6 +788,7 @@ def create_graph_fdr(expression_matrix,
                     future_tf_matrix_gene_names,
                     target_gene_name,
                     target_gene_expression,
+                    target_subset_grn,
                     include_meta,
                     early_stop_window_length,
                     seed,
@@ -799,13 +801,24 @@ def create_graph_fdr(expression_matrix,
                     delayed_link_dfs.append(delayed_link_df)
                     delayed_meta_dfs.append(delayed_meta_df)
             else:
-                delayed_link_df = delayed(count_computation_medoid, pure=True)(
-                    regressor_type, regressor_kwargs,
-                    future_tf_matrix, future_tf_matrix_gene_names,
-                    target_gene_name, target_gene_expression, include_meta, early_stop_window_length, seed, n_permutations, output_directory, bootstrap_fdr_fraction)
+                delayed_link_df = delayed(count_computation_medoid_representative, pure=True)(
+                    regressor_type,
+                    regressor_kwargs,
+                    future_tf_matrix,
+                    future_tf_matrix_gene_names,
+                    target_gene_name,
+                    target_gene_expression,
+                    target_subset_grn,
+                    include_meta,
+                    early_stop_window_length,
+                    seed,
+                    n_permutations,
+                    output_directory,
+                    bootstrap_fdr_fraction)
 
                 if delayed_link_df is not None:
                     delayed_link_dfs.append(delayed_link_df)
+
     # Loop over all genes of cluster, i.e. simulate random drawing of genes from clusters.
     elif fdr_mode == 'random':
         raise ValueError("FDR mode random has not been implemented yet.")
