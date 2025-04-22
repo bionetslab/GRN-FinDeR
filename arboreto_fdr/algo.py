@@ -1,10 +1,14 @@
 """
 Top-level functions.
 """
+from multiprocessing.managers import Value
 
 import pandas as pd
 from distributed import Client, LocalCluster
-from arboreto_fdr.core import create_graph, SGBM_KWARGS, RF_KWARGS, EARLY_STOP_WINDOW_LENGTH, DEFAULT_PERMUTATIONS, DEFAULT_TMP_DIR, BOOTSTRAP_FDR_FRACTION
+from numba.cuda.cudadecl import integer_numba_types
+from requests.packages import target
+
+from arboreto_fdr.core import create_graph, create_graph_fdr, SGBM_KWARGS, RF_KWARGS, EARLY_STOP_WINDOW_LENGTH, DEFAULT_PERMUTATIONS, DEFAULT_TMP_DIR, BOOTSTRAP_FDR_FRACTION
 import os.path as op
 import os
 
@@ -89,6 +93,11 @@ def diy(expression_data,
         regressor_kwargs,
         gene_names=None,
         tf_names='all',
+        tfs_clustered=False, # True if TFs have also been clustered for FDR control
+        tf_representatives=None, # either None, or list of pre-chosen TF representatives (e.g. medoids)
+        non_tf_representatives=None, # either None, or list of pre-chosen non-TF representatives (e.g. medoids)
+        clustering_dict=None, # should store {Gene : clusterID} relation
+        input_grn=None, # stores edges of input GRN in {(TF, Target) : {importance : <imp>} }
         client_or_address='local',
         early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
         limit=None,
@@ -138,9 +147,41 @@ def diy(expression_data,
         if verbose:
             print('creating dask graph')
 
-        graph = create_graph(expression_matrix,
+        # Run GRNBoost in classical non-FDR mode.
+        run_fdr_control = (not input_grn is None)
+        if not run_fdr_control:
+            graph = create_graph(expression_matrix,
+                                     gene_names,
+                                     tf_names,
+                                     client=client,
+                                     regressor_type=regressor_type,
+                                     regressor_kwargs=regressor_kwargs,
+                                     early_stop_window_length=early_stop_window_length,
+                                     limit=limit,
+                                     seed=seed,
+                                     n_permutations=n_permutations,
+                                     output_directory=output_directory,
+                                     bootstrap_fdr_fraction=bootstrap_fdr_fraction)
+        else:
+            if verbose:
+                print('running FDR on input GRN')
+            if clustering_dict is None:
+                raise ValueError(f'Clustering is None, but needs to be passed in FDR mode.')
+
+            if non_tf_representatives is None:
+                fdr_mode = 'random'
+            else:
+                fdr_mode = 'medoid'
+
+            graph = create_graph_fdr(expression_matrix,
                              gene_names,
                              tf_names,
+                             fdr_mode=fdr_mode,
+                             tfs_clustered=tfs_clustered,
+                             tf_representatives=tf_representatives,
+                             non_tf_representatives=non_tf_representatives,
+                             clustering_dict=clustering_dict,
+                             input_grn=input_grn,
                              client=client,
                              regressor_type=regressor_type,
                              regressor_kwargs=regressor_kwargs,
