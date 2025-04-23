@@ -93,11 +93,12 @@ def diy(expression_data,
         regressor_kwargs,
         gene_names=None,
         tf_names='all',
-        tfs_clustered=False, # True if TFs have also been clustered for FDR control
+        are_tfs_clustered=False, # True if TFs have also been clustered for FDR control
         tf_representatives=None, # either None, or list of pre-chosen TF representatives (e.g. medoids)
         non_tf_representatives=None, # either None, or list of pre-chosen non-TF representatives (e.g. medoids)
-        clustering_dict=None, # should store {Gene : clusterID} relation
+        gene_to_cluster=None, # should store {Gene : clusterID} relation
         input_grn=None, # stores edges of input GRN in {(TF, Target) : {importance : <imp>} }
+        fdr_mode=None, # either 'medoid', 'random', or None if no FDR desired
         client_or_address='local',
         early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
         limit=None,
@@ -148,8 +149,7 @@ def diy(expression_data,
             print('creating dask graph')
 
         # Run GRNBoost in classical non-FDR mode.
-        run_fdr_control = (not input_grn is None)
-        if not run_fdr_control:
+        if fdr_mode is None:
             graph = create_graph(expression_matrix,
                                      gene_names,
                                      tf_names,
@@ -164,35 +164,28 @@ def diy(expression_data,
                                      bootstrap_fdr_fraction=bootstrap_fdr_fraction)
         else:
             if verbose:
-                print('running FDR on input GRN')
-            if clustering_dict is None:
+                print('Running FDR on input GRN')
+            if gene_to_cluster is None:
                 raise ValueError(f'Clustering is None, but needs to be passed in FDR mode.')
-
-            if non_tf_representatives is None:
-                fdr_mode = 'random'
-            else:
-                fdr_mode = 'medoid'
+            if input_grn is None:
+                raise ValueError(f'Input GRN is None, but needs to be passed in FDR mode.')
+            if tf_representatives is None or non_tf_representatives is None:
+                raise ValueError(f'TF or non-TF representatives are None, but need to passed in FDR mode.')
 
             graph = create_graph_fdr(expression_matrix,
-                             gene_names,
-                             tf_names,
-                             fdr_mode=fdr_mode,
-                             tfs_clustered=tfs_clustered,
-                             tf_representatives=tf_representatives,
-                             non_tf_representatives=non_tf_representatives,
-                             clustering_dict=clustering_dict,
-                             input_grn=input_grn,
-                             client=client,
-                             regressor_type=regressor_type,
-                             regressor_kwargs=regressor_kwargs,
-                             early_stop_window_length=early_stop_window_length,
-                             limit=limit,
-                             seed=seed,
-                             n_permutations=n_permutations,
-                             output_directory = output_directory,
-                             bootstrap_fdr_fraction= bootstrap_fdr_fraction)
-       
-
+                                     gene_names=gene_names,
+                                     fdr_mode=fdr_mode,
+                                     are_tfs_clustered=are_tfs_clustered,
+                                     tf_representatives=tf_representatives,
+                                     non_tf_representatives=non_tf_representatives,
+                                     gene_to_cluster=gene_to_cluster,
+                                     input_grn=input_grn,
+                                     regressor_type=regressor_type,
+                                     regressor_kwargs=regressor_kwargs,
+                                     client=client,
+                                     early_stop_window_length=early_stop_window_length,
+                                     seed=seed,
+                                     n_permutations=n_permutations)
 
         if verbose:
             print('{} partitions'.format(graph.npartitions))

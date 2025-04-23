@@ -426,12 +426,12 @@ def count_computation_sampled_representative(
         tf_matrix,
         tf_matrix_gene_names,
         target_gene_name,
-        target_gene_expression,  # todo: gene expr matrix of all cluster members
-        partial_input_grn: dict[str, tuple],  # todo: input grn induced by all genes from the cluster
-        include_meta=False,
+        target_gene_expression,
+        partial_input_grn: dict[str, tuple],
+        gene_to_cluster: dict[str, int],
+        n_permutations = DEFAULT_PERMUTATIONS,
         early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
         seed=DEMON_SEED,
-        n_permutations = DEFAULT_PERMUTATIONS,
 
 ):
     # TODO:
@@ -444,6 +444,15 @@ def _count_helper(
         partial_input_grn: dict[str, dict[str, float]],
         gene_to_clust: dict[str, int],
 ) -> None:
+    """
+    Computes empirical counts for all edges in input GRN based on given decoy edges.
+    Args:
+        shuffled_grn: Decoy edges based on shuffled expression matrix.
+        partial_input_grn: "Groundtruth" edges from input GRN.
+        gene_to_clust: Clustering of genes, with gene names as keys and cluster IDs as values.
+
+    Returns: None. Partial_input_GRN is updated in-place.
+    """
 
     # {id of cluster of TF: importance}
     shuffled_grn_tf_cluster_to_importance = {
@@ -703,52 +712,53 @@ def create_graph(expression_matrix,
 
 def partition_input_grn(input_grn, clustering_dict):
     grn_subsets = dict()
+    genes_per_cluster = dict()
     for (tf, target), val in input_grn.items():
         target_cluster = clustering_dict[target]
         if target_cluster in grn_subsets:
             grn_subsets[target_cluster].update({(tf, target): val})
+            genes_per_cluster[target_cluster].append(target)
         else:
             grn_subsets[target_cluster] = {(tf, target): val}
-    return grn_subsets
+            genes_per_cluster[target_cluster] = []
+    return grn_subsets, genes_per_cluster
 
-def create_graph_fdr(expression_matrix,
-                 gene_names,
-                 tf_names,
-                 fdr_mode,
-                 tfs_clustered,
-                 tf_representatives,
-                 non_tf_representatives,
-                 clustering_dict,
-                 input_grn,
+def create_graph_fdr(expression_matrix : np.ndarray,
+                 gene_names : list[str],
+                 fdr_mode : str,
+                 are_tfs_clustered : bool,
+                 tf_representatives : list[str],
+                 non_tf_representatives : list[str],
+                 gene_to_cluster : dict[str, int],
+                 input_grn : dict,
                  regressor_type,
                  regressor_kwargs,
                  client,
-                 target_genes='all',
-                 limit=None,
-                 include_meta=False,
                  early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
                  repartition_multiplier=1,
                  seed=DEMON_SEED,
                  n_permutations = DEFAULT_PERMUTATIONS,
-                 output_directory = DEFAULT_TMP_DIR,
-                 bootstrap_fdr_fraction = BOOTSTRAP_FDR_FRACTION):
+                 ):
     """
-    Main API function. Create a Dask computation graph.
+    Main API function for FDR control. Create a Dask computation graph.
 
     Note: fixing the GC problems was fixed by 2 changes: [1] and [2] !!!
 
     :param expression_matrix: numpy matrix. Rows are observations and columns are genes.
-    :param gene_names: list of gene names. Each entry corresponds to the expression_matrix column with same index.
-    :param tf_names: list of transcription factor names. Should have a non-empty intersection with gene_names.
+    :param gene_names : list[str]. List of gene names, in the order as they appear in the expression matrix columns.
+    :param fdr_mode: str. One of 'medoid', 'random' to indicate representative drawing mode.
+    :param are_tfs_clustered: bool. True if TFs have also been clustered, False otherwise.
+    :param tf_representatives: list[str]. List of TFs, either only medoids, or all TFs in 'random' mode.
+    :param non_tf_representatives: list[str]. List of non-TFs, either only medoids, or all non-TFs in 'random' mode.
+    :param gene_to_cluster: dict[str, int]. Keys are gene names, values are cluster IDs they belong to.
+    :param input_grn: dict. Input GRN to be FDR-controlled in dict format with (tf,target) as keys.
     :param regressor_type: regressor type. Case insensitive.
     :param regressor_kwargs: dict of key-value pairs that configures the regressor.
     :param client: a dask.distributed client instance.
                    * Used to scatter-broadcast the tf matrix to the workers instead of simply wrapping in a delayed().
-    :param target_genes: either int, 'all' or a collection that is a subset of gene_names.
-    :param limit: optional number of top regulatory links to return. Default None.
-    :param include_meta: Also return the meta DataFrame. Default False.
     :param early_stop_window_length: window length of the early stopping monitor.
     :param repartition_multiplier: multiplier
+    :param n_permutations: int. Number of random permutations to run for FDR control.
     :param seed: (optional) random seed for the regressors. Default 666.
     :return: if include_meta is False, returns a Dask graph that computes the links DataFrame.
              If include_meta is True, returns a tuple: the links DataFrame and the meta DataFrame.
@@ -811,37 +821,38 @@ def create_graph_fdr(expression_matrix,
     
 
     '''
-    assert expression_matrix.shape[1] == len(gene_names)
-    assert client, "client is required"
-    tf_matrix, tf_matrix_gene_names = to_tf_matrix(expression_matrix, gene_names, tf_names)
+    assert client, "Client not given, but is required in create_graph_fdr!"
+    # Check if gene_to_cluster is complete, i.e. if for every gene in expression matrix, a corresponding cluster has
+    # been precomputed.
+    all_genes = {gene for gene, _ in gene_to_cluster.items()}
+    assert expression_matrix.shape[1] == len(all_genes)
 
-    # Subset TF expression matrix if medoids should be used as representatives.
-    if tfs_clustered and fdr_mode == 'medoid':
-        if tf_representatives is None:
-            raise ValueError(f'TF clustering mode has been set with "medoid" mode, but no TF medoids are given.')
-        tf_matrix, tf_matrix_gene_names = to_tf_matrix(expression_matrix, tf_representatives, tf_representatives)
+    # Subset expression matrix to TF representatives ('medoid' mode). Leave as is, if TFs have not been clustered or
+    # FDR mode is 'random'.
+    tf_matrix, tf_matrix_gene_names = to_tf_matrix(expression_matrix, gene_names, tf_representatives)
 
-    # Subset input GRN to only contain medoid targets.
-    grn_subsets = partition_input_grn(input_grn, clustering_dict)
+    # Partition input GRN into dict storing target-cluster IDs as keys and edge dicts (as in input GRN) as values.
+    # Second data structure stores target genes per cluster for 'random' FDR mode.
+    grn_subsets_per_target, genes_per_target_cluster = partition_input_grn(input_grn, gene_to_cluster)
 
     future_tf_matrix = client.scatter(tf_matrix, broadcast=True)
     # [1] wrap in a list of 1 -> unsure why but Matt. Rocklin does this often...
     [future_tf_matrix_gene_names] = client.scatter([tf_matrix_gene_names], broadcast=True)
+    # TODO: check if gene_to_clust also needs to be scattered among all workers?
 
     delayed_link_dfs = []  # collection of delayed link DataFrames
-    delayed_meta_dfs = []  # collection of delayed meta DataFrame
 
     # Use pre-computed medoid representatives for TFs and/or non-TFs.
     if fdr_mode == 'medoid':
-        # Loop over all representative targets.
+        # Loop over all representative targets, i.e. non-TF medoids.
+        # TODO: currently, with this implementation TFs cannot appear as targets!
         for target_gene_index in target_gene_indices(gene_names, non_tf_representatives):
             target_gene_name = delayed(gene_names[target_gene_index], pure=True)
             target_gene_expression = delayed(expression_matrix[:, target_gene_index], pure=True)
-            target_subset_grn = delayed(grn_subsets[target_gene_name], pure=True)
+            target_subset_grn = delayed(grn_subsets_per_target[target_gene_name], pure=True)
 
             # Pass subset of GRN which is represented by the medoids.
-            if include_meta:
-                delayed_link_df, delayed_meta_df = delayed(count_computation_medoid_representative, pure=True, nout=2)(
+            delayed_link_df = delayed(count_computation_medoid_representative, pure=True)(
                     regressor_type,
                     regressor_kwargs,
                     future_tf_matrix,
@@ -849,61 +860,53 @@ def create_graph_fdr(expression_matrix,
                     target_gene_name,
                     target_gene_expression,
                     target_subset_grn,
-                    include_meta,
+                    gene_to_cluster,
+                    n_permutations,
                     early_stop_window_length,
                     seed,
-                    n_permutations,
-                    output_directory,
-                    bootstrap_fdr_fraction
                 )
 
-                if delayed_link_df is not None:
-                    delayed_link_dfs.append(delayed_link_df)
-                    delayed_meta_dfs.append(delayed_meta_df)
-            else:
-                delayed_link_df = delayed(count_computation_medoid_representative, pure=True)(
-                    regressor_type,
-                    regressor_kwargs,
-                    future_tf_matrix,
-                    future_tf_matrix_gene_names,
-                    target_gene_name,
-                    target_gene_expression,
-                    target_subset_grn,
-                    include_meta,
-                    early_stop_window_length,
-                    seed,
-                    n_permutations,
-                    output_directory,
-                    bootstrap_fdr_fraction)
-
-                if delayed_link_df is not None:
-                    delayed_link_dfs.append(delayed_link_df)
+            if delayed_link_df is not None:
+                delayed_link_dfs.append(delayed_link_df)
 
     # Loop over all genes of cluster, i.e. simulate random drawing of genes from clusters.
     elif fdr_mode == 'random':
-        raise ValueError("FDR mode random has not been implemented yet.")
+        # Loop over all target clusters.
+        for cluster_id, cluster_targets in genes_per_target_cluster.items():
+            target_cluster_idxs = target_gene_indices(gene_names, cluster_targets)
+            target_cluster_gene_names = [gene for gene in gene_names if gene in cluster_targets]
+            target_cluster_expression = expression_matrix[:, target_cluster_idxs]
+            # TODO: make sure that order of gene_names and cluster_idxs actually matches order in expression matrix
+            target_subset_grn = grn_subsets_per_target[cluster_id]
+
+            delayed_link_df = delayed(count_computation_sampled_representative, pure=True)(
+                    regressor_type,
+                    regressor_kwargs,
+                    future_tf_matrix,
+                    future_tf_matrix_gene_names,
+                    target_cluster_gene_names,
+                    target_cluster_expression,
+                    target_subset_grn,
+                    gene_to_cluster,
+                    n_permutations,
+                    early_stop_window_length,
+                    seed,
+                )
+
+            if delayed_link_dfs is not None:
+                delayed_link_dfs.append(delayed_link_df)
+
     else:
         raise ValueError(f'Unknown FDR mode: {fdr_mode}.')
 
     # gather the DataFrames into one distributed DataFrame
-    all_links_df = from_delayed(delayed_link_dfs, meta=_GRN_SCHEMA)        
-
-    # optionally limit the number of resulting regulatory links, descending by top importance
-    if limit:
-        maybe_limited_links_df = all_links_df.nlargest(limit, columns=['importance'])
-    else:
-        maybe_limited_links_df = all_links_df
+    all_links_df = from_delayed(delayed_link_dfs, meta=_GRN_SCHEMA)
 
     # [2] repartition to nr of workers -> important to avoid GC problems!
     # see: http://dask.pydata.org/en/latest/dataframe-performance.html#repartition-to-reduce-overhead
     n_parts = len(client.ncores()) * repartition_multiplier
 
-    if include_meta:
-        all_meta_df = from_delayed(delayed_meta_dfs, meta=_META_SCHEMA)
-        return maybe_limited_links_df.repartition(npartitions=n_parts), \
-               all_meta_df.repartition(npartitions=n_parts)
-    else:
-        return maybe_limited_links_df.repartition(npartitions=n_parts)
+    return all_links_df.repartition(npartitions=n_parts)
 
 
 class EarlyStopMonitor:
