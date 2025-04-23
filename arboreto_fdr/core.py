@@ -357,18 +357,67 @@ def count_computation_medoid_representative(
         regressor_type,
         regressor_kwargs,
         tf_matrix,
-        tf_matrix_gene_names,
-        target_gene_name,
-        target_gene_expression,
-        partial_input_grn: dict,
-        include_meta=False,
+        tf_matrix_gene_names: list[str],
+        target_gene_name: str,
+        target_gene_expression: np.ndarray,
+        partial_input_grn: dict,  # {(TF, target): {'importance': float}}
+        gene_to_clust: dict[str, int],
+        n_permutations: int,
         early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
         seed=DEMON_SEED,
-        n_permutations = DEFAULT_PERMUTATIONS,
-
 ):
-    # TODO
-    pass
+    # Remove target from TF-list and TF-expression matrix if target itself is a TF
+    (clean_tf_matrix, clean_tf_matrix_gene_names) = clean(tf_matrix, tf_matrix_gene_names, target_gene_name)
+
+    # Special case in which only a single TF is passed and the target gene
+    # here is the same as the TF (clean_tf_matrix is empty after cleaning):
+    if clean_tf_matrix.size == 0:
+        raise ValueError("Cleaned TF matrix is empty, skipping inference of target {}.".format(target_gene_name))
+
+    # Initialize counts
+    for _, val in partial_input_grn.items():
+        val.update({'count': 0.0})
+
+    # Iterate for num permutations
+    for _ in range(n_permutations):
+
+        # Shuffle target gene expression vector
+        permuted_target_gene_expression = np.random.permutation(target_gene_expression)
+
+        # Train the random forest regressor
+        try:
+            trained_regressor = fit_model(
+                regressor_type,
+                regressor_kwargs,
+                clean_tf_matrix,
+                permuted_target_gene_expression,
+                early_stop_window_length,
+                seed
+            )
+        except ValueError as e:
+            raise ValueError(
+                "Regression for target gene {0} failed. Cause {1}.".format(target_gene_name, repr(e))
+            )
+
+        # Construct the shuffled GRN dataframe from the trained regressor
+        shuffled_grn_df = to_links_df(
+            regressor_type,
+            regressor_kwargs,
+            trained_regressor,
+            clean_tf_matrix_gene_names,
+            target_gene_name
+        )
+
+        # Update the count values of the partial input GRN
+        _count_helper(shuffled_grn_df, partial_input_grn, gene_to_clust)
+
+    # Change partial input GRN format from dict to df
+    partial_input_grn_fdr_df = pd.DataFrame(
+        [(TF, target, v['importance'], v['count']) for (TF, target), v in partial_input_grn.items()],
+        columns=['TF', 'target', 'importance', 'count']
+    )
+
+    return partial_input_grn_fdr_df
 
 
 def count_computation_sampled_representative(
@@ -392,13 +441,24 @@ def count_computation_sampled_representative(
 
 def _count_helper(
         shuffled_grn: pd.DataFrame,
-        partial_input_grn: dict[str, tuple],
-):
-    # TODO:
-    #  - Convert shuffled_grn to dict format (for faster access)
-    #  - Loop over partial input grn:
-    #    - If TF(-representative) edge is in shuffled_grn: compare importance, raise count
-    pass
+        partial_input_grn: dict[str, dict[str, float]],
+        gene_to_clust: dict[str, int],
+) -> None:
+
+    # {id of cluster of TF: importance}
+    shuffled_grn_tf_cluster_to_importance = {
+        gene_to_clust[tf]: imp for tf, imp in zip(shuffled_grn['TF'], shuffled_grn['importance'])
+    }
+
+    for (tf, _), val in partial_input_grn.items():
+        if gene_to_clust[tf] in shuffled_grn_tf_cluster_to_importance:
+            importance_input = val['importance']
+            importance_shuffled = shuffled_grn_tf_cluster_to_importance[gene_to_clust[tf]]
+
+            if importance_shuffled >= importance_input:
+                val['count'] += 1
+
+
 
 def infer_partial_network(regressor_type,
                           regressor_kwargs,
