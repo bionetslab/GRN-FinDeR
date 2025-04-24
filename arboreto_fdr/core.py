@@ -9,12 +9,14 @@ import pandas as pd
 import logging
 
 import scipy
+from fontTools.subset import subset
 from requests.packages import target
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor, ExtraTreesRegressor
 from dask import delayed
 from dask.dataframe import from_delayed
 from dask.dataframe.utils import make_meta
 import os.path as op
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -396,7 +398,7 @@ def count_computation_medoid_representative(
             )
         except ValueError as e:
             raise ValueError(
-                "Regression for target gene {0} failed. Cause {1}.".format(target_gene_name, repr(e))
+                "Count_computation_medoid: regression for target gene {0} failed. Cause {1}.".format(target_gene_name, repr(e))
             )
 
         # Construct the shuffled GRN dataframe from the trained regressor
@@ -425,19 +427,92 @@ def count_computation_sampled_representative(
         regressor_kwargs,
         tf_matrix,
         tf_matrix_gene_names,
-        target_gene_name,
-        target_gene_expression,
-        partial_input_grn: dict[str, tuple],
+        cluster_to_tfs,
+        target_gene_names,
+        target_gene_idxs,
+        target_gene_expressions,
+        partial_input_grn: dict,
         gene_to_cluster: dict[str, int],
         n_permutations = DEFAULT_PERMUTATIONS,
         early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
         seed=DEMON_SEED,
 
 ):
-    # TODO:
-    #   - Iterate over the targets (current_permut % n_targets) ~ unif at random
-    pass
+    # Initialize counts on input GRN edges.
+    for _, val in partial_input_grn.items():
+        val.update({'count': 0.0})
 
+    for perm in range(n_permutations):
+        # Retrieve "random" target gene from cluster.
+        perm_index = perm % n_permutations
+        target_gene_name = target_gene_names[perm_index]
+        target_gene_index = target_gene_idxs[perm_index]
+        target_expression = target_gene_expressions[:, target_gene_index]
+
+        # Remove target from TF-list and TF-expression matrix if target itself is a TF
+        (clean_tf_matrix, clean_tf_matrix_gene_names) = clean(tf_matrix, tf_matrix_gene_names, target_gene_name)
+
+        # Sample one TF per TF-cluster and subset TF expression matrix in case of TFs having been clustered.
+        if not cluster_to_tfs is None:
+            tf_representatives = []
+            for cluster, tf_list in cluster_to_tfs.items():
+                representative = random.sample(tf_list, k=1)
+                tf_representatives.append(representative)
+            # Subset TF expression matrix.
+            clean_tf_matrix, clean_tf_gene_names = _subset_tf_matrix(clean_tf_matrix,
+                                                                    clean_tf_matrix_gene_names,
+                                                                    tf_representatives)
+
+        # Special case in which only a single TF is passed and the target gene
+        # here is the same as the TF (clean_tf_matrix is empty after cleaning):
+        if clean_tf_matrix.size == 0:
+            raise ValueError("Cleaned TF matrix is empty, skipping inference of target {}.".format(target_gene_name))
+
+        # Shuffle target gene expression vector
+        permuted_target_gene_expression = np.random.permutation(target_expression)
+
+        # Train the random forest regressor.
+        try:
+            trained_regressor = fit_model(
+                regressor_type,
+                regressor_kwargs,
+                clean_tf_matrix,
+                permuted_target_gene_expression,
+                early_stop_window_length,
+                seed
+            )
+        except ValueError as e:
+            raise ValueError(
+                "Count_computation_sampled: regression for target gene {0} failed. Cause {1}.".format(target_gene_name, repr(e))
+            )
+
+        # Construct the shuffled GRN dataframe from the trained regressor
+        shuffled_grn_df = to_links_df(
+            regressor_type,
+            regressor_kwargs,
+            trained_regressor,
+            clean_tf_matrix_gene_names,
+            target_gene_name
+        )
+
+        # Update the count values of the partial input GRN.
+        _count_helper(shuffled_grn_df, partial_input_grn, gene_to_cluster)
+
+    # Change partial input GRN format from dict to df
+    partial_input_grn_fdr_df = pd.DataFrame(
+        [(TF, target, v['importance'], v['count']) for (TF, target), v in partial_input_grn.items()],
+        columns=['TF', 'target', 'importance', 'count']
+    )
+
+    return partial_input_grn_fdr_df
+
+def _subset_tf_matrix(tf_matrix : np.ndarray,
+                      tf_gene_names : list[str],
+                      tf_subset_names : list[str]):
+    tf_subset_indices = [index for index, tf in enumerate(tf_gene_names) if tf in tf_subset_names]
+    tf_subset_matrix = tf_matrix[:, tf_subset_indices]
+    tf_subset_names = [tf for tf in tf_gene_names if tf in tf_subset_names]
+    return tf_subset_matrix, tf_subset_names
 
 def _count_helper(
         shuffled_grn: pd.DataFrame,
@@ -455,6 +530,9 @@ def _count_helper(
     """
 
     # {id of cluster of TF: importance}
+    # Note that each TF-cluster-ID (i.e. key in the following dict) still only occurs exactly once, since either
+    # TFs have not been clustered (i.e. each TF has one dummy cluster) or if TFs have been clustered, then
+    # each TF cluster has exactly one representative and hence can only appear once in shuffled output GRN.
     shuffled_grn_tf_cluster_to_importance = {
         gene_to_clust[tf]: imp for tf, imp in zip(shuffled_grn['TF'], shuffled_grn['importance'])
     }
@@ -723,6 +801,27 @@ def partition_input_grn(input_grn, clustering_dict):
             genes_per_cluster[target_cluster] = []
     return grn_subsets, genes_per_cluster
 
+def invert_tf_to_cluster_dict(tf_representatives : list[str],
+                              gene_to_cluster : dict[str, int]):
+    """
+    Computes per cluster list of corresponding TFs names.
+    Args:
+        tf_representatives: List of TF names as strings.
+        gene_to_cluster: Whole clustering of all input genes.
+
+    Returns:
+        Dict with cluster ID as key and list of TF names as values.
+    """
+    cluster_to_tf = dict()
+    # Subset and invert gene-cluster dict to only contain TFs.
+    for gene, cluster in gene_to_cluster.items():
+        if gene in tf_representatives:
+            if not cluster in cluster_to_tf:
+                cluster_to_tf[cluster] = []
+            cluster_to_tf[cluster].append(gene)
+    return cluster_to_tf
+
+
 def create_graph_fdr(expression_matrix : np.ndarray,
                  gene_names : list[str],
                  fdr_mode : str,
@@ -849,7 +948,7 @@ def create_graph_fdr(expression_matrix : np.ndarray,
         for target_gene_index in target_gene_indices(gene_names, non_tf_representatives):
             target_gene_name = delayed(gene_names[target_gene_index], pure=True)
             target_gene_expression = delayed(expression_matrix[:, target_gene_index], pure=True)
-            target_subset_grn = delayed(grn_subsets_per_target[target_gene_name], pure=True)
+            target_subset_grn = delayed(grn_subsets_per_target[gene_to_cluster[target_gene_name]], pure=True)
 
             # Pass subset of GRN which is represented by the medoids.
             delayed_link_df = delayed(count_computation_medoid_representative, pure=True)(
@@ -874,17 +973,27 @@ def create_graph_fdr(expression_matrix : np.ndarray,
         # Loop over all target clusters.
         for cluster_id, cluster_targets in genes_per_target_cluster.items():
             target_cluster_idxs = target_gene_indices(gene_names, cluster_targets)
-            target_cluster_gene_names = [gene for gene in gene_names if gene in cluster_targets]
+            # Like this, order of cluster gene names should be consistent with order in cluster_idxs and hence with
+            # gene column order in expression matrix.
+            target_cluster_gene_names = [gene for index, gene in enumerate(gene_names) if index in target_cluster_idxs]
             target_cluster_expression = expression_matrix[:, target_cluster_idxs]
-            # TODO: make sure that order of gene_names and cluster_idxs actually matches order in expression matrix
             target_subset_grn = grn_subsets_per_target[cluster_id]
+
+            # If TFs have been clustered in 'random' mode, then per permutation, one TF per cluster needs to be
+            # drawn. Precompute the necessary cluster-TF relationships here such that keys are cluster IDs
+            # and values are list of TFs.
+            cluster_to_tfs = None
+            if are_tfs_clustered:
+                cluster_to_tfs = invert_tf_to_cluster_dict(tf_representatives, gene_to_cluster)
 
             delayed_link_df = delayed(count_computation_sampled_representative, pure=True)(
                     regressor_type,
                     regressor_kwargs,
                     future_tf_matrix,
                     future_tf_matrix_gene_names,
+                    cluster_to_tfs,
                     target_cluster_gene_names,
+                    target_cluster_idxs,
                     target_cluster_expression,
                     target_subset_grn,
                     gene_to_cluster,
