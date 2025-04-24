@@ -935,9 +935,11 @@ def create_graph_fdr(expression_matrix : np.ndarray,
     # Second data structure stores target genes per cluster for 'random' FDR mode.
     grn_subsets_per_target, genes_per_target_cluster = partition_input_grn(input_grn, gene_to_cluster)
 
-    future_tf_matrix = client.scatter(tf_matrix, broadcast=True)
+    #future_tf_matrix = client.scatter(tf_matrix, broadcast=True)
+    future_tf_matrix = tf_matrix
     # [1] wrap in a list of 1 -> unsure why but Matt. Rocklin does this often...
-    [future_tf_matrix_gene_names] = client.scatter([tf_matrix_gene_names], broadcast=True)
+    #[future_tf_matrix_gene_names] = client.scatter([tf_matrix_gene_names], broadcast=True)
+    future_tf_matrix_gene_names = tf_matrix_gene_names
     # TODO: check if gene_to_clust also needs to be scattered among all workers?
 
     delayed_link_dfs = []  # collection of delayed link DataFrames
@@ -945,14 +947,13 @@ def create_graph_fdr(expression_matrix : np.ndarray,
     # Use pre-computed medoid representatives for TFs and/or non-TFs.
     if fdr_mode == 'medoid':
         # Loop over all representative targets, i.e. non-TF medoids.
-        # TODO: currently, with this implementation TFs cannot appear as targets!
-        for target_gene_index in target_gene_indices(gene_names, non_tf_representatives):
+        for target_gene_index in target_gene_indices(gene_names, non_tf_representatives+tf_representatives):
             target_gene_name = gene_names[target_gene_index]
-            target_gene_expression = delayed(expression_matrix[:, target_gene_index], pure=True)
-            target_subset_grn = delayed(grn_subsets_per_target[gene_to_cluster[target_gene_name]], pure=True)
+            target_gene_expression = expression_matrix[:, target_gene_index]
+            target_subset_grn = grn_subsets_per_target[gene_to_cluster[target_gene_name]]
 
             # Pass subset of GRN which is represented by the medoids.
-            delayed_link_df = delayed(count_computation_medoid_representative, pure=True)(
+            delayed_link_df = count_computation_medoid_representative(
                     regressor_type,
                     regressor_kwargs,
                     future_tf_matrix,
@@ -1011,13 +1012,15 @@ def create_graph_fdr(expression_matrix : np.ndarray,
         raise ValueError(f'Unknown FDR mode: {fdr_mode}.')
 
     # gather the DataFrames into one distributed DataFrame
-    all_links_df = from_delayed(delayed_link_dfs, meta=_GRN_SCHEMA)
+    # all_links_df = from_delayed(delayed_link_dfs, meta=_GRN_SCHEMA)
+    all_links_df = pd.concat(delayed_link_dfs, ignore_index=True)
 
     # [2] repartition to nr of workers -> important to avoid GC problems!
     # see: http://dask.pydata.org/en/latest/dataframe-performance.html#repartition-to-reduce-overhead
     n_parts = len(client.ncores()) * repartition_multiplier
 
-    return all_links_df.repartition(npartitions=n_parts)
+    #return all_links_df.repartition(npartitions=n_parts)
+    return all_links_df
 
 
 class EarlyStopMonitor:
