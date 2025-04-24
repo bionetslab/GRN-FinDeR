@@ -795,10 +795,11 @@ def partition_input_grn(input_grn, clustering_dict):
         target_cluster = clustering_dict[target]
         if target_cluster in grn_subsets:
             grn_subsets[target_cluster].update({(tf, target): val})
-            genes_per_cluster[target_cluster].append(target)
+            genes_per_cluster[target_cluster].add(target)
         else:
             grn_subsets[target_cluster] = {(tf, target): val}
-            genes_per_cluster[target_cluster] = []
+            genes_per_cluster[target_cluster] = {target}
+    genes_per_cluster = {cluster : list(genes) for cluster, genes in genes_per_cluster.items()}
     return grn_subsets, genes_per_cluster
 
 def invert_tf_to_cluster_dict(tf_representatives : list[str],
@@ -946,7 +947,7 @@ def create_graph_fdr(expression_matrix : np.ndarray,
         # Loop over all representative targets, i.e. non-TF medoids.
         # TODO: currently, with this implementation TFs cannot appear as targets!
         for target_gene_index in target_gene_indices(gene_names, non_tf_representatives):
-            target_gene_name = delayed(gene_names[target_gene_index], pure=True)
+            target_gene_name = gene_names[target_gene_index]
             target_gene_expression = delayed(expression_matrix[:, target_gene_index], pure=True)
             target_subset_grn = delayed(grn_subsets_per_target[gene_to_cluster[target_gene_name]], pure=True)
 
@@ -971,6 +972,7 @@ def create_graph_fdr(expression_matrix : np.ndarray,
     # Loop over all genes of cluster, i.e. simulate random drawing of genes from clusters.
     elif fdr_mode == 'random':
         # Loop over all target clusters.
+        # TODO: with this implementation, TFs cannot appear as targets!
         for cluster_id, cluster_targets in genes_per_target_cluster.items():
             target_cluster_idxs = target_gene_indices(gene_names, cluster_targets)
             # Like this, order of cluster gene names should be consistent with order in cluster_idxs and hence with

@@ -50,6 +50,64 @@ def grnboost2(expression_data,
                early_stop_window_length=early_stop_window_length, limit=limit, seed=seed, verbose=verbose, n_permutations=n_permutations, 
                output_directory=output_directory, bootstrap_fdr_fraction = bootstrap_fdr_fraction)
 
+def grnboost2_fdr(expression_data,
+              are_tfs_clustered : bool,
+              tf_representatives : list,
+              non_tf_representatives : list,
+              gene_to_cluster : dict,
+              input_grn : dict,
+              fdr_mode : str,
+              gene_names=None,
+              tf_names='all',
+              client_or_address='local',
+              early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
+              limit=None,
+              seed=None,
+              verbose=False,
+              n_permutations=DEFAULT_PERMUTATIONS,
+              output_directory = DEFAULT_TMP_DIR,
+              bootstrap_fdr_fraction = BOOTSTRAP_FDR_FRACTION):
+
+    """
+    Launch arboreto with [GRNBoost2] profile.
+
+    :param expression_data: one of:
+           * a pandas DataFrame (rows=observations, columns=genes)
+           * a dense 2D numpy.ndarray
+           * a sparse scipy.sparse.csc_matrix
+    :param gene_names: optional list of gene names (strings). Required when a (dense or sparse) matrix is passed as
+                       'expression_data' instead of a DataFrame.
+    :param tf_names: optional list of transcription factors. If None or 'all', the list of gene_names will be used.
+    :param client_or_address: one of:
+           * None or 'local': a new Client(LocalCluster()) will be used to perform the computation.
+           * string address: a new Client(address) will be used to perform the computation.
+           * a Client instance: the specified Client instance will be used to perform the computation.
+    :param early_stop_window_length: early stop window length. Default 25.
+    :param limit: optional number (int) of top regulatory links to return. Default None.
+    :param seed: optional random seed for the regressors. Default None.
+    :param verbose: print info.
+    :return: a pandas DataFrame['TF', 'target', 'importance'] representing the inferred gene regulatory links.
+    """
+
+    return diy(expression_data=expression_data,
+               regressor_type='GBM',
+               regressor_kwargs=SGBM_KWARGS,
+               gene_names=gene_names,
+               tf_names=tf_names,
+               are_tfs_clustered=are_tfs_clustered,
+               tf_representatives=tf_representatives,
+               non_tf_representatives=non_tf_representatives,
+               gene_to_cluster=gene_to_cluster,
+               input_grn=input_grn,
+               fdr_mode=fdr_mode,
+               client_or_address=client_or_address,
+               early_stop_window_length=early_stop_window_length,
+               limit=limit,
+               seed=seed,
+               verbose=verbose,
+               n_permutations=n_permutations,
+               output_directory=output_directory,
+               bootstrap_fdr_fraction = bootstrap_fdr_fraction)
 
 def genie3(expression_data,
            gene_names=None,
