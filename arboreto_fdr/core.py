@@ -444,7 +444,7 @@ def count_computation_sampled_representative(
 
     for perm in range(n_permutations):
         # Retrieve "random" target gene from cluster.
-        perm_index = perm % n_permutations
+        perm_index = perm % len(target_gene_names)
         target_gene_name = target_gene_names[perm_index]
         target_gene_index = target_gene_idxs[perm_index]
         target_expression = target_gene_expressions[:, target_gene_index]
@@ -972,14 +972,13 @@ def create_graph_fdr(expression_matrix : np.ndarray,
 
     # Loop over all genes of cluster, i.e. simulate random drawing of genes from clusters.
     elif fdr_mode == 'random':
-        # Loop over all target clusters.
-        # TODO: with this implementation, TFs cannot appear as targets!
+        # Loop over all target clusters (that includes TF clusters).
         for cluster_id, cluster_targets in genes_per_target_cluster.items():
             target_cluster_idxs = target_gene_indices(gene_names, cluster_targets)
             # Like this, order of cluster gene names should be consistent with order in cluster_idxs and hence with
             # gene column order in expression matrix.
             target_cluster_gene_names = [gene for index, gene in enumerate(gene_names) if index in target_cluster_idxs]
-            target_cluster_expression = expression_matrix[:, target_cluster_idxs]
+            target_cluster_expression = expression_matrix
             target_subset_grn = grn_subsets_per_target[cluster_id]
 
             # If TFs have been clustered in 'random' mode, then per permutation, one TF per cluster needs to be
@@ -989,7 +988,7 @@ def create_graph_fdr(expression_matrix : np.ndarray,
             if are_tfs_clustered:
                 cluster_to_tfs = invert_tf_to_cluster_dict(tf_representatives, gene_to_cluster)
 
-            delayed_link_df = delayed(count_computation_sampled_representative, pure=True)(
+            delayed_link_df = count_computation_sampled_representative(
                     regressor_type,
                     regressor_kwargs,
                     future_tf_matrix,
