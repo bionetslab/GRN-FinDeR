@@ -450,6 +450,7 @@ def count_computation_sampled_representative(
         target_expression = target_gene_expressions[:, target_gene_index]
 
         # Remove target from TF-list and TF-expression matrix if target itself is a TF
+        # TODO: dicuss, whether TF should remain in TF matrix if it is representative and not individual TF
         (clean_tf_matrix, clean_tf_matrix_gene_names) = clean(tf_matrix, tf_matrix_gene_names, target_gene_name)
 
         # Sample one TF per TF-cluster and subset TF expression matrix in case of TFs having been clustered.
@@ -457,9 +458,9 @@ def count_computation_sampled_representative(
             tf_representatives = []
             for cluster, tf_list in cluster_to_tfs.items():
                 representative = random.sample(tf_list, k=1)
-                tf_representatives.append(representative)
+                tf_representatives.append(representative[0])
             # Subset TF expression matrix.
-            clean_tf_matrix, clean_tf_gene_names = _subset_tf_matrix(clean_tf_matrix,
+            clean_tf_matrix, clean_tf_matrix_gene_names = _subset_tf_matrix(clean_tf_matrix,
                                                                     clean_tf_matrix_gene_names,
                                                                     tf_representatives)
 
