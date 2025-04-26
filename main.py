@@ -57,13 +57,13 @@ def debug_arboreto_fdr_random_tfs_clustered():
     are_tfs_clustered = True
     fdr_mode = 'random'
 
-    corrected_grn = grnboost2_fdr(expr_mat,
-                                  are_tfs_clustered,
-                                  tf_representatives,
-                                  non_tf_representatives,
-                                  gene_to_clust,
-                                  input_grn,
-                                  fdr_mode)
+    corrected_grn = grnboost2_fdr(expression_data=expr_mat,
+                                  are_tfs_clustered=are_tfs_clustered,
+                                  tf_representatives=tf_representatives,
+                                  non_tf_representatives=non_tf_representatives,
+                                  gene_to_cluster=gene_to_clust,
+                                  input_grn=input_grn,
+                                  )
 
     print(corrected_grn)
 
@@ -119,13 +119,13 @@ def debug_arboreto_fdr_random_tfs_unclustered():
     are_tfs_clustered = False
     fdr_mode = 'random'
 
-    corrected_grn = grnboost2_fdr(expr_mat,
-                                  are_tfs_clustered,
-                                  tf_representatives,
-                                  non_tf_representatives,
-                                  gene_to_clust,
-                                  input_grn,
-                                  fdr_mode)
+    corrected_grn = grnboost2_fdr(expression_data=expr_mat,
+                                  are_tfs_clustered=are_tfs_clustered,
+                                  tf_representatives=tf_representatives,
+                                  non_tf_representatives=non_tf_representatives,
+                                  gene_to_cluster=gene_to_clust,
+                                  input_grn=input_grn,
+                                  )
 
     print(corrected_grn)
 
@@ -195,13 +195,13 @@ def debug_arboreto_fdr_medoids_tfs_clustered():
     are_tfs_clustered = True
     fdr_mode = 'medoid'
 
-    corrected_grn = grnboost2_fdr(expr_mat,
-                                  are_tfs_clustered,
-                                  tf_representatives,
-                                  non_tf_representatives,
-                                  gene_to_clust,
-                                  input_grn,
-                                  fdr_mode)
+    corrected_grn = grnboost2_fdr(expression_data=expr_mat,
+                                  are_tfs_clustered=are_tfs_clustered,
+                                  tf_representatives=tf_representatives,
+                                  non_tf_representatives=non_tf_representatives,
+                                  gene_to_cluster=gene_to_clust,
+                                  input_grn=input_grn,
+                                  )
 
     print(corrected_grn)
 
@@ -261,13 +261,13 @@ def debug_arboreto_fdr_medoids_tfs_unclustered():
     are_tfs_clustered = False
     fdr_mode = 'medoid'
 
-    corrected_grn = grnboost2_fdr(expr_mat,
-                                  are_tfs_clustered,
-                                  tf_representatives,
-                                  non_tf_representatives,
-                                  gene_to_clust,
-                                  input_grn,
-                                  fdr_mode)
+    corrected_grn = grnboost2_fdr(expression_data=expr_mat,
+                                  are_tfs_clustered=are_tfs_clustered,
+                                  tf_representatives=tf_representatives,
+                                  non_tf_representatives=non_tf_representatives,
+                                  gene_to_cluster=gene_to_clust,
+                                  input_grn=input_grn,
+                                  )
 
     print(corrected_grn)
 
@@ -324,8 +324,7 @@ def main_mwe():
 
 if __name__ == '__main__':
 
-    debug_arboreto_fdr_random_tfs_clustered()
-    # main_mwe()
+    debug_arboreto_fdr_medoids_tfs_clustered()
 
     print('done')
 

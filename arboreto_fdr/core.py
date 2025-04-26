@@ -826,7 +826,6 @@ def invert_tf_to_cluster_dict(tf_representatives : list[str],
 
 def create_graph_fdr(expression_matrix : np.ndarray,
                  gene_names : list[str],
-                 fdr_mode : str,
                  are_tfs_clustered : bool,
                  tf_representatives : list[str],
                  non_tf_representatives : list[str],
@@ -926,7 +925,15 @@ def create_graph_fdr(expression_matrix : np.ndarray,
     # Check if gene_to_cluster is complete, i.e. if for every gene in expression matrix, a corresponding cluster has
     # been precomputed.
     all_genes = {gene for gene, _ in gene_to_cluster.items()}
-    assert expression_matrix.shape[1] == len(all_genes)
+    assert expression_matrix.shape[1] == len(all_genes), "Size of expression matrix does not match gene names."
+    assert len(gene_names)==len(all_genes), "Number of clustered genes and genes in expression matrix do not match."
+
+    # Extract FDR mode information from TF and non-TF representative lists.
+    fdr_mode = None
+    if len(tf_representatives)+len(non_tf_representatives) == len(all_genes):
+        fdr_mode = 'random'
+    else:
+        fdr_mode = 'medoid'
 
     # Subset expression matrix to TF representatives ('medoid' mode). Leave as is, if TFs have not been clustered or
     # FDR mode is 'random'.
@@ -941,7 +948,6 @@ def create_graph_fdr(expression_matrix : np.ndarray,
     # [1] wrap in a list of 1 -> unsure why but Matt. Rocklin does this often...
     #[future_tf_matrix_gene_names] = client.scatter([tf_matrix_gene_names], broadcast=True)
     future_tf_matrix_gene_names = tf_matrix_gene_names
-    # TODO: check if gene_to_clust also needs to be scattered among all workers?
 
     delayed_link_dfs = []  # collection of delayed link DataFrames
 

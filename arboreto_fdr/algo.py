@@ -20,9 +20,7 @@ def grnboost2(expression_data,
               limit=None,
               seed=None,
               verbose=False,
-              n_permutations=DEFAULT_PERMUTATIONS,
-              output_directory = DEFAULT_TMP_DIR,
-              bootstrap_fdr_fraction = BOOTSTRAP_FDR_FRACTION):
+              ):
 
     """
     Launch arboreto with [GRNBoost2] profile.
@@ -47,8 +45,7 @@ def grnboost2(expression_data,
 
     return diy(expression_data=expression_data, regressor_type='GBM', regressor_kwargs=SGBM_KWARGS,
                gene_names=gene_names, tf_names=tf_names, client_or_address=client_or_address,
-               early_stop_window_length=early_stop_window_length, limit=limit, seed=seed, verbose=verbose, n_permutations=n_permutations, 
-               output_directory=output_directory, bootstrap_fdr_fraction = bootstrap_fdr_fraction)
+               early_stop_window_length=early_stop_window_length, limit=limit, seed=seed, verbose=verbose,)
 
 def grnboost2_fdr(expression_data,
               are_tfs_clustered : bool,
@@ -56,58 +53,56 @@ def grnboost2_fdr(expression_data,
               non_tf_representatives : list,
               gene_to_cluster : dict,
               input_grn : dict,
-              fdr_mode : str,
               gene_names=None,
-              tf_names='all',
               client_or_address='local',
               early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
-              limit=None,
               seed=None,
               verbose=False,
               n_permutations=DEFAULT_PERMUTATIONS,
               output_directory = DEFAULT_TMP_DIR,
-              bootstrap_fdr_fraction = BOOTSTRAP_FDR_FRACTION):
+              ):
 
     """
-    Launch arboreto with [GRNBoost2] profile.
+    Perform FDR control for given input GRN with grnboost2.
 
     :param expression_data: one of:
            * a pandas DataFrame (rows=observations, columns=genes)
            * a dense 2D numpy.ndarray
            * a sparse scipy.sparse.csc_matrix
+    :param are_tfs_clustered: True if TFs have also been clustered for FDR control.
+    :param tf_representatives: Either list of pre-chosen TF representatives or simply all TFs.
+    :param non_tf_representatives: Either list of pre-chosen non-TF representatives or all non-TFs.
+    :param gene_to_cluster: Keys are gene names and values are cluster IDs as integers.
+    :param input_grn: Dict storing input GRN for FDR control with keys as edge tuples, and as values dicts with
+        {'importance' : <float>} structure.
     :param gene_names: optional list of gene names (strings). Required when a (dense or sparse) matrix is passed as
                        'expression_data' instead of a DataFrame.
-    :param tf_names: optional list of transcription factors. If None or 'all', the list of gene_names will be used.
     :param client_or_address: one of:
            * None or 'local': a new Client(LocalCluster()) will be used to perform the computation.
            * string address: a new Client(address) will be used to perform the computation.
            * a Client instance: the specified Client instance will be used to perform the computation.
     :param early_stop_window_length: early stop window length. Default 25.
-    :param limit: optional number (int) of top regulatory links to return. Default None.
     :param seed: optional random seed for the regressors. Default None.
     :param verbose: print info.
     :return: a pandas DataFrame['TF', 'target', 'importance'] representing the inferred gene regulatory links.
     """
 
-    return diy(expression_data=expression_data,
+    return diy_fdr(expression_data=expression_data,
                regressor_type='GBM',
                regressor_kwargs=SGBM_KWARGS,
                gene_names=gene_names,
-               tf_names=tf_names,
                are_tfs_clustered=are_tfs_clustered,
                tf_representatives=tf_representatives,
                non_tf_representatives=non_tf_representatives,
                gene_to_cluster=gene_to_cluster,
                input_grn=input_grn,
-               fdr_mode=fdr_mode,
                client_or_address=client_or_address,
                early_stop_window_length=early_stop_window_length,
-               limit=limit,
                seed=seed,
                verbose=verbose,
                n_permutations=n_permutations,
                output_directory=output_directory,
-               bootstrap_fdr_fraction = bootstrap_fdr_fraction)
+               )
 
 def genie3(expression_data,
            gene_names=None,
@@ -141,30 +136,16 @@ def genie3(expression_data,
                limit=limit, seed=seed, verbose=verbose)
 
 
-def control_fdr():
-    pass
-
-
-
 def diy(expression_data,
         regressor_type,
         regressor_kwargs,
         gene_names=None,
         tf_names='all',
-        are_tfs_clustered=False, # True if TFs have also been clustered for FDR control
-        tf_representatives=None, # either None, or list of pre-chosen TF representatives (e.g. medoids)
-        non_tf_representatives=None, # either None, or list of pre-chosen non-TF representatives (e.g. medoids)
-        gene_to_cluster=None, # should store {Gene : clusterID} relation
-        input_grn=None, # stores edges of input GRN in {(TF, Target) : {importance : <imp>} }
-        fdr_mode=None, # either 'medoid', 'random', or None if no FDR desired
         client_or_address='local',
         early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
         limit=None,
         seed=None,
-        verbose=False,
-        n_permutations = DEFAULT_PERMUTATIONS,
-        output_directory = DEFAULT_TMP_DIR,
-        bootstrap_fdr_fraction = BOOTSTRAP_FDR_FRACTION):
+        verbose=False):
     """
     :param expression_data: one of:
            * a pandas DataFrame (rows=observations, columns=genes)
@@ -187,6 +168,85 @@ def diy(expression_data,
     """
     if verbose:
         print('preparing dask client')
+
+    client, shutdown_callback = _prepare_client(client_or_address)
+
+    try:
+        if verbose:
+            print('parsing input')
+
+        expression_matrix, gene_names, tf_names = _prepare_input(expression_data, gene_names, tf_names)
+
+        if verbose:
+            print('creating dask graph')
+
+        graph = create_graph(expression_matrix,
+                             gene_names,
+                             tf_names,
+                             client=client,
+                             regressor_type=regressor_type,
+                             regressor_kwargs=regressor_kwargs,
+                             early_stop_window_length=early_stop_window_length,
+                             limit=limit,
+                             seed=seed)
+
+        if verbose:
+            print('{} partitions'.format(graph.npartitions))
+            print('computing dask graph')
+
+        return client \
+            .compute(graph, sync=True) \
+            .sort_values(by='importance', ascending=False)
+
+    finally:
+        shutdown_callback(verbose)
+
+        if verbose:
+            print('finished')
+
+
+def diy_fdr(expression_data,
+        regressor_type,
+        regressor_kwargs,
+        are_tfs_clustered,
+        tf_representatives,
+        non_tf_representatives,
+        gene_to_cluster,
+        input_grn,
+        gene_names=None,
+        client_or_address='local',
+        early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
+        seed=None,
+        verbose=False,
+        n_permutations = DEFAULT_PERMUTATIONS,
+        output_directory = DEFAULT_TMP_DIR,
+        ):
+    """
+    :param are_tfs_clustered: True if TFs have also been clustered for FDR control.
+    :param tf_representatives: Either list of pre-chosen TF representatives or simply all TFs.
+    :param non_tf_representatives: Either list of pre-chosen non-TF representatives or all non-TFs.
+    :param gene_to_cluster: Keys are gene names and values are cluster IDs as integers.
+    :param input_grn: Dict storing input GRN for FDR control with keys as edge tuples, and as values dicts with
+        {'importance' : <float>} structure.
+    :param expression_data: one of:
+           * a pandas DataFrame (rows=observations, columns=genes)
+           * a dense 2D numpy.ndarray
+           * a sparse scipy.sparse.csc_matrix
+    :param regressor_type: string. One of: 'RF', 'GBM', 'ET'. Case insensitive.
+    :param regressor_kwargs: a dictionary of key-value pairs that configures the regressor.
+    :param gene_names: optional list of gene names (strings). Required when a (dense or sparse) matrix is passed as
+                       'expression_data' instead of a DataFrame.
+    :param early_stop_window_length: early stopping window length.
+    :param client_or_address: one of:
+           * None or 'local': a new Client(LocalCluster()) will be used to perform the computation.
+           * string address: a new Client(address) will be used to perform the computation.
+           * a Client instance: the specified Client instance will be used to perform the computation.
+    :param seed: optional random seed for the regressors. Default 666. Use None for random seed.
+    :param verbose: print info.
+    :return: a pandas DataFrame['TF', 'target', 'importance'] representing the inferred gene regulatory links.
+    """
+    if verbose:
+        print('preparing dask client')
     
     if output_directory is not None:
         if not os.path.exists(output_directory):
@@ -201,49 +261,33 @@ def diy(expression_data,
         if verbose:
             print('parsing input')
 
-        expression_matrix, gene_names, tf_names = _prepare_input(expression_data, gene_names, tf_names)
+        # TF names do not matter in FDR mode, hence can be set to dummy list.
+        tf_names = None
+        expression_matrix, gene_names, _ = _prepare_input(expression_data, gene_names, tf_names)
 
         if verbose:
             print('creating dask graph')
 
-        # Run GRNBoost in classical non-FDR mode.
-        if fdr_mode is None:
-            graph = create_graph(expression_matrix,
-                                     gene_names,
-                                     tf_names,
-                                     client=client,
-                                     regressor_type=regressor_type,
-                                     regressor_kwargs=regressor_kwargs,
-                                     early_stop_window_length=early_stop_window_length,
-                                     limit=limit,
-                                     seed=seed,
-                                     n_permutations=n_permutations,
-                                     output_directory=output_directory,
-                                     bootstrap_fdr_fraction=bootstrap_fdr_fraction)
-        else:
-            if verbose:
-                print('Running FDR on input GRN')
-            if gene_to_cluster is None:
-                raise ValueError(f'Clustering is None, but needs to be passed in FDR mode.')
-            if input_grn is None:
-                raise ValueError(f'Input GRN is None, but needs to be passed in FDR mode.')
-            if tf_representatives is None or non_tf_representatives is None:
-                raise ValueError(f'TF or non-TF representatives are None, but need to passed in FDR mode.')
+        if gene_to_cluster is None:
+            raise ValueError(f'Clustering is None, but needs to be passed in FDR mode.')
+        if input_grn is None:
+            raise ValueError(f'Input GRN is None, but needs to be passed in FDR mode.')
+        if tf_representatives is None or non_tf_representatives is None:
+            raise ValueError(f'TF or non-TF representatives are None, but need to passed in FDR mode.')
 
-            graph = create_graph_fdr(expression_matrix,
-                                     gene_names=gene_names,
-                                     fdr_mode=fdr_mode,
-                                     are_tfs_clustered=are_tfs_clustered,
-                                     tf_representatives=tf_representatives,
-                                     non_tf_representatives=non_tf_representatives,
-                                     gene_to_cluster=gene_to_cluster,
-                                     input_grn=input_grn,
-                                     regressor_type=regressor_type,
-                                     regressor_kwargs=regressor_kwargs,
-                                     client=client,
-                                     early_stop_window_length=early_stop_window_length,
-                                     seed=seed,
-                                     n_permutations=n_permutations)
+        graph = create_graph_fdr(expression_matrix,
+                                 gene_names=gene_names,
+                                 are_tfs_clustered=are_tfs_clustered,
+                                 tf_representatives=tf_representatives,
+                                 non_tf_representatives=non_tf_representatives,
+                                 gene_to_cluster=gene_to_cluster,
+                                 input_grn=input_grn,
+                                 regressor_type=regressor_type,
+                                 regressor_kwargs=regressor_kwargs,
+                                 client=client,
+                                 early_stop_window_length=early_stop_window_length,
+                                 seed=seed,
+                                 n_permutations=n_permutations)
 
         if verbose:
             print('{} partitions'.format(graph.npartitions))
