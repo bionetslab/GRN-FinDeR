@@ -828,7 +828,7 @@ def invert_tf_to_cluster_dict(tf_representatives : list[str],
 
 def create_graph_fdr(expression_matrix : np.ndarray,
                  gene_names : list[str],
-                 are_tfs_clustered : bool,
+                 are_tfs_clustered,
                  tf_representatives : list[str],
                  non_tf_representatives : list[str],
                  gene_to_cluster : dict[str, int],
@@ -852,7 +852,8 @@ def create_graph_fdr(expression_matrix : np.ndarray,
     :param are_tfs_clustered: bool. True if TFs have also been clustered, False otherwise.
     :param tf_representatives: list[str]. List of TFs, either only medoids, or all TFs in 'random' mode.
     :param non_tf_representatives: list[str]. List of non-TFs, either only medoids, or all non-TFs in 'random' mode.
-    :param gene_to_cluster: dict[str, int]. Keys are gene names, values are cluster IDs they belong to.
+    :param gene_to_cluster: dict[str, int]. Keys are gene names, values are cluster IDs they belong to. If set to
+        None, run full 'groundtruth' FDR control on all genes.
     :param input_grn: dict. Input GRN to be FDR-controlled in dict format with (tf,target) as keys.
     :param regressor_type: regressor type. Case insensitive.
     :param regressor_kwargs: dict of key-value pairs that configures the regressor.
@@ -924,25 +925,29 @@ def create_graph_fdr(expression_matrix : np.ndarray,
 
     '''
     assert client, "Client not given, but is required in create_graph_fdr!"
+    # Extract FDR mode information from TF and non-TF representative lists.
+    fdr_mode = None
+    if len(tf_representatives) + len(non_tf_representatives) == len(gene_names) and not gene_to_cluster is None:
+        fdr_mode = 'random'
+    elif not gene_to_cluster is None:
+        fdr_mode = 'medoid'
+    else: # Full FDR mode coincides with medoid mode, with all genes assigned to dummy singleton clusters.
+        fdr_mode = 'medoid'
+        print("Running full FDR mode...")
+        gene_to_cluster = {gene : cluster_id for cluster_id, gene in enumerate(tf_representatives+non_tf_representatives)}
+
     # Check if gene_to_cluster is complete, i.e. if for every gene in expression matrix, a corresponding cluster has
     # been precomputed.
     all_genes = {gene for gene, _ in gene_to_cluster.items()}
     assert expression_matrix.shape[1] == len(all_genes), "Size of expression matrix does not match gene names."
     assert len(gene_names)==len(all_genes), "Number of clustered genes and genes in expression matrix do not match."
 
-    # Extract FDR mode information from TF and non-TF representative lists.
-    fdr_mode = None
-    if len(tf_representatives)+len(non_tf_representatives) == len(all_genes):
-        fdr_mode = 'random'
-    else:
-        fdr_mode = 'medoid'
-
     # Subset expression matrix to TF representatives ('medoid' mode). Leave as is, if TFs have not been clustered or
     # FDR mode is 'random'.
     tf_matrix, tf_matrix_gene_names = to_tf_matrix(expression_matrix, gene_names, tf_representatives)
 
     # Partition input GRN into dict storing target-cluster IDs as keys and edge dicts (as in input GRN) as values.
-    # Second data structure stores target genes per cluster for 'random' FDR mode.
+    # Second data structure stores target genes per cluster.
     grn_subsets_per_target, genes_per_target_cluster = partition_input_grn(input_grn, gene_to_cluster)
 
     future_tf_matrix = client.scatter(tf_matrix, broadcast=True)
@@ -1021,7 +1026,6 @@ def create_graph_fdr(expression_matrix : np.ndarray,
 
             if delayed_link_dfs is not None:
                 delayed_link_dfs.append(delayed_link_df)
-
     else:
         raise ValueError(f'Unknown FDR mode: {fdr_mode}.')
 

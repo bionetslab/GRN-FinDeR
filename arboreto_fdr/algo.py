@@ -48,11 +48,11 @@ def grnboost2(expression_data,
                early_stop_window_length=early_stop_window_length, limit=limit, seed=seed, verbose=verbose,)
 
 def grnboost2_fdr(expression_data,
-              are_tfs_clustered : bool,
               tf_representatives : list,
               non_tf_representatives : list,
-              gene_to_cluster : dict,
               input_grn : dict,
+              gene_to_cluster : dict = None,
+              are_tfs_clustered: bool = None,
               gene_names=None,
               client_or_address='local',
               early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
@@ -268,12 +268,16 @@ def diy_fdr(expression_data,
         if verbose:
             print('creating dask graph')
 
-        if gene_to_cluster is None:
-            raise ValueError(f'Clustering is None, but needs to be passed in FDR mode.')
         if input_grn is None:
             raise ValueError(f'Input GRN is None, but needs to be passed in FDR mode.')
         if tf_representatives is None or non_tf_representatives is None:
             raise ValueError(f'TF or non-TF representatives are None, but need to passed in FDR mode.')
+        if not are_tfs_clustered is None and gene_to_cluster is None:
+            raise ValueError('Are_TFs_clustered information is not given, but clustered FDR mode is chosen.')
+        if gene_to_cluster is None:
+            if verbose:
+                print("Genes have not been clustered, running full FDR mode.")
+
 
         graph = create_graph_fdr(expression_matrix,
                                  gene_names=gene_names,

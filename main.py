@@ -1,4 +1,47 @@
 
+def debug_arboreto_fdr_groundtruth():
+    import numpy as np
+    import pandas as pd
+    from arboreto_fdr.algo import grnboost2_fdr# Import from arboreto_fdr !!!
+    from arboreto.algo import grnboost2
+
+    from src.distance_matrix import compute_wasserstein_distance_matrix
+    from src.clustering import cluster_genes_to_dict
+
+    n_tfs = 10
+    n_non_tfs = 10
+    n_cells = 10
+    tfs = [f'TF{i}' for i in range(n_tfs)]
+    non_tfs = [f'Gene{i}' for i in range(n_non_tfs)]
+    # Construct dummy example
+
+    np.random.seed(42)
+
+    expr_mat = pd.DataFrame(
+        # np.random.normal(0, 1, (n_cells, n_tfs + n_genes)),
+        np.random.poisson(lam=np.random.gamma(shape=2, scale=1, size=(n_cells, n_tfs + n_non_tfs))),
+        columns=tfs + non_tfs,
+    )
+
+    input_grn_df = grnboost2(expression_data=expr_mat, tf_names=tfs, verbose=True, seed=777)
+    # print(input_grn_df)
+    # Transform input GRN to dict-format.
+    input_grn = dict()
+    for tf, target, importance in zip(input_grn_df['TF'], input_grn_df['target'], input_grn_df['importance']):
+        input_grn[(tf, target)] = {'importance' : importance}
+
+    # Compute medoids for each target cluster.
+    non_tf_representatives = non_tfs
+    tf_representatives = tfs
+
+    corrected_grn = grnboost2_fdr(expression_data=expr_mat,
+                                  tf_representatives=tf_representatives,
+                                  non_tf_representatives=non_tf_representatives,
+                                  input_grn=input_grn,
+                                  )
+
+    print(corrected_grn)
+
 def debug_arboreto_fdr_random_tfs_clustered():
     import numpy as np
     import pandas as pd
@@ -324,7 +367,7 @@ def main_mwe():
 
 if __name__ == '__main__':
 
-    debug_arboreto_fdr_medoids_tfs_clustered()
+    debug_arboreto_fdr_groundtruth()
 
     print('done')
 
