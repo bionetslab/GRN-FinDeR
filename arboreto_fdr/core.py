@@ -10,6 +10,7 @@ import logging
 
 import scipy
 from fontTools.subset import subset
+from numba.core.event import broadcast
 from requests.packages import target
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor, ExtraTreesRegressor
 from dask import delayed
@@ -349,7 +350,7 @@ def retry(fn, max_retries=10, warning_msg=None, fallback_result=None):
 #                  fallback_result=fallback_result,
 #                  warning_msg='WARNING: infer_data failed for target {0}'.format(target_gene_name))
 
-_GRN_SCHEMA = make_meta({'TF': str, 'target': str, 'importance': float, 'counter': int})
+_GRN_SCHEMA = make_meta({'TF': str, 'target': str, 'importance': float, 'count': float})
 _META_SCHEMA = make_meta({'target': str, 'n_estimators': int})
 
 # ### TODO: infer partial network for original, medoid, and random
@@ -457,8 +458,9 @@ def count_computation_sampled_representative(
         if not cluster_to_tfs is None:
             tf_representatives = []
             for cluster, tf_list in cluster_to_tfs.items():
-                representative = random.sample(tf_list, k=1)
-                tf_representatives.append(representative[0])
+                cluster_size = len(tf_list)
+                representative = tf_list[perm % cluster_size]
+                tf_representatives.append(representative)
             # Subset TF expression matrix.
             clean_tf_matrix, clean_tf_matrix_gene_names = _subset_tf_matrix(clean_tf_matrix,
                                                                     clean_tf_matrix_gene_names,
@@ -943,11 +945,13 @@ def create_graph_fdr(expression_matrix : np.ndarray,
     # Second data structure stores target genes per cluster for 'random' FDR mode.
     grn_subsets_per_target, genes_per_target_cluster = partition_input_grn(input_grn, gene_to_cluster)
 
-    #future_tf_matrix = client.scatter(tf_matrix, broadcast=True)
-    future_tf_matrix = tf_matrix
+    future_tf_matrix = client.scatter(tf_matrix, broadcast=True)
     # [1] wrap in a list of 1 -> unsure why but Matt. Rocklin does this often...
-    #[future_tf_matrix_gene_names] = client.scatter([tf_matrix_gene_names], broadcast=True)
-    future_tf_matrix_gene_names = tf_matrix_gene_names
+    [future_tf_matrix_gene_names] = client.scatter([tf_matrix_gene_names], broadcast=True)
+
+    # Broadcast gene-to-cluster dictionary among all workers.
+    # future_gene_to_cluster = client.scatter(gene_to_cluster, broadcast=True) --> gives dict key error...
+    [future_gene_to_cluster] = client.scatter([gene_to_cluster], broadcast=True)
 
     delayed_link_dfs = []  # collection of delayed link DataFrames
 
@@ -956,11 +960,11 @@ def create_graph_fdr(expression_matrix : np.ndarray,
         # Loop over all representative targets, i.e. non-TF medoids.
         for target_gene_index in target_gene_indices(gene_names, non_tf_representatives+tf_representatives):
             target_gene_name = gene_names[target_gene_index]
-            target_gene_expression = expression_matrix[:, target_gene_index]
-            target_subset_grn = grn_subsets_per_target[gene_to_cluster[target_gene_name]]
+            target_gene_expression = delayed(expression_matrix[:, target_gene_index])
+            target_subset_grn = delayed(grn_subsets_per_target[gene_to_cluster[target_gene_name]])
 
             # Pass subset of GRN which is represented by the medoids.
-            delayed_link_df = count_computation_medoid_representative(
+            delayed_link_df = delayed(count_computation_medoid_representative, pure=True)(
                     regressor_type,
                     regressor_kwargs,
                     future_tf_matrix,
@@ -968,7 +972,7 @@ def create_graph_fdr(expression_matrix : np.ndarray,
                     target_gene_name,
                     target_gene_expression,
                     target_subset_grn,
-                    gene_to_cluster,
+                    future_gene_to_cluster,
                     n_permutations,
                     early_stop_window_length,
                     seed,
@@ -985,25 +989,29 @@ def create_graph_fdr(expression_matrix : np.ndarray,
             # Like this, order of cluster gene names should be consistent with order in cluster_idxs and hence with
             # gene column order in expression matrix.
             target_cluster_gene_names = [gene for index, gene in enumerate(gene_names) if index in target_cluster_idxs]
-            target_cluster_expression = expression_matrix
+            cluster_expression = delayed(expression_matrix)
+
+            # Dask does not allow iterating over delayed dictionary, so no delayed() at this point.
             target_subset_grn = grn_subsets_per_target[cluster_id]
 
             # If TFs have been clustered in 'random' mode, then per permutation, one TF per cluster needs to be
             # drawn. Precompute the necessary cluster-TF relationships here such that keys are cluster IDs
             # and values are list of TFs.
-            cluster_to_tfs = None
             if are_tfs_clustered:
                 cluster_to_tfs = invert_tf_to_cluster_dict(tf_representatives, gene_to_cluster)
+                [future_cluster_to_tfs] = client.scatter([cluster_to_tfs], broadcast=True)
+            else:
+                future_cluster_to_tfs = None
 
-            delayed_link_df = count_computation_sampled_representative(
+            delayed_link_df = delayed(count_computation_sampled_representative, pure=True)(
                     regressor_type,
                     regressor_kwargs,
                     future_tf_matrix,
                     future_tf_matrix_gene_names,
-                    cluster_to_tfs,
+                    future_cluster_to_tfs,
                     target_cluster_gene_names,
                     target_cluster_idxs,
-                    target_cluster_expression,
+                    cluster_expression,
                     target_subset_grn,
                     gene_to_cluster,
                     n_permutations,
@@ -1017,16 +1025,16 @@ def create_graph_fdr(expression_matrix : np.ndarray,
     else:
         raise ValueError(f'Unknown FDR mode: {fdr_mode}.')
 
-    # gather the DataFrames into one distributed DataFrame
-    # all_links_df = from_delayed(delayed_link_dfs, meta=_GRN_SCHEMA)
-    all_links_df = pd.concat(delayed_link_dfs, ignore_index=True)
+    # Gather the DataFrames into one distributed DataFrame.
+    all_links_df = from_delayed(delayed_link_dfs, meta=_GRN_SCHEMA)
+    # all_links_df = pd.concat(delayed_link_dfs, ignore_index=True)
 
     # [2] repartition to nr of workers -> important to avoid GC problems!
     # see: http://dask.pydata.org/en/latest/dataframe-performance.html#repartition-to-reduce-overhead
     n_parts = len(client.ncores()) * repartition_multiplier
 
-    #return all_links_df.repartition(npartitions=n_parts)
-    return all_links_df
+    return all_links_df.repartition(npartitions=n_parts)
+    #return all_links_df
 
 
 class EarlyStopMonitor:
