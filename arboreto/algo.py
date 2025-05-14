@@ -3,6 +3,7 @@ Top-level functions.
 """
 
 import pandas as pd
+from anndata.utils import raise_value_error_if_multiindex_columns
 from distributed import Client, LocalCluster
 from arboreto.core import create_graph, SGBM_KWARGS, RF_KWARGS, EARLY_STOP_WINDOW_LENGTH
 from arboreto.fdr import perform_fdr
@@ -15,6 +16,7 @@ def grnboost2_fdr(
         num_tf_clusters : int = -1,
         input_grn : dict = None,
         tf_names : list[str] = None,
+        target_batch : list[str] = None,
         client_or_address='local',
         early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
         seed=None,
@@ -24,6 +26,9 @@ def grnboost2_fdr(
 ):
     if cluster_representative_mode not in {'medoid', 'random', 'all_genes'}:
         raise ValueError('cluster_representative_mode must be one of "medoid", "random", "all_genes"')
+
+    if target_batch is not None and cluster_representative_mode != "all_genes":
+        raise ValueError("Explicit target gene list is given, but is only available in full FDR mode.")
 
     if num_non_tf_clusters==-1 and num_tf_clusters==-1 and not cluster_representative_mode == "all_genes":
         print("No cluster numbers given, running full FDR mode...")
@@ -75,6 +80,7 @@ def grnboost2_fdr(
         num_tf_clusters,
         cluster_representative_mode,
         tf_names_input_grn,
+        target_batch,
         client_or_address,
         early_stop_window_length,
         seed,
