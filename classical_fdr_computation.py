@@ -9,7 +9,40 @@ import copy
 import yaml
 import pandas as pd
 
+from arboreto.algo import grnboost2, grnboost2_fdr
 
+
+def compute_input_grns(gtex_dir: str, verbosity: int = 0):
+
+    tissue_dirs = sorted(os.listdir(gtex_dir))
+
+    for tissue_dir in tissue_dirs:
+
+        if verbosity > 0:
+            print(f'# ### Computing GRN for tissue: {tissue_dir}')
+
+        tissue_dir_path = os.path.join(gtex_dir, tissue_dir)
+
+        # Load the expression matrix
+        expression_mat_filename = f'{tissue_dir}.tsv'
+        expression_mat = pd.read_csv(os.path.join(tissue_dir_path, expression_mat_filename), sep='\t', index_col=0)
+
+        # Load the targets and get the TFs as the complement
+        all_genes = expression_mat.columns.tolist()
+
+        target_filename = f'{tissue_dir}_target_genes.tsv'
+        target_df = pd.read_csv(os.path.join(tissue_dir_path, target_filename), index_col=0)
+        tf_list = set(expression_mat.columns) - set(target_df['target_gene'])
+
+        input_grn = grnboost2(
+            expression_data=expression_mat,
+            gene_names=None,
+            tf_names=tf_list,
+            seed=42,
+            verbose=False,
+        )
+
+        input_grn.to_csv(os.path.join(tissue_dir_path, f'{tissue_dir}_input_grn.csv'), index=False)
 
 
 def generate_batch_configs(gtex_dir: str, batch_size: int, save_dir: str | None, verbosity: int = 0) -> None:
@@ -30,10 +63,12 @@ def generate_batch_configs(gtex_dir: str, batch_size: int, save_dir: str | None,
         tissue_dir_path = os.path.join(gtex_dir, tissue_dir)
 
         expression_mat_filename = f'{tissue_dir}.tsv'
+        input_grn_filename = f'{tissue_dir}_input_grn.tsv'
 
         config['tissue_name'] = tissue_dir
         config['tissue_data_path'] = tissue_dir_path
         config['expression_mat_filename'] = expression_mat_filename
+        config['input_grn_filename'] = input_grn_filename
 
         expression_mat = pd.read_csv(os.path.join(tissue_dir_path, expression_mat_filename), sep='\t', index_col=0)
 
@@ -68,33 +103,68 @@ def _batch_genes(genes: list[str], batch_size: int) -> list[list[str]]:
     return batch_list
 
 
-def compute_classical_fdr_grn(config: dict, verbosity: int = 0) -> pd.DataFrame:
+def compute_classical_fdr(config: dict, verbosity: int = 0) -> pd.DataFrame:
 
     # Load the expression data
     tissue_name = config['tissue_name']  # Same as tissue_dir
     tissue_dir_path = config['tissue_data_path']  # gtex_dir + tissue_dir (where expression matrix is saved)
-    expression_mat_filename = config['expression_mat_filename']
 
+    # Load the expression data
+    expression_mat_filename = config['expression_mat_filename']
     expression_mat = pd.read_csv(os.path.join(tissue_dir_path, expression_mat_filename), sep='\t', index_col=0)
 
+    # Load the input GRN
+    input_grn_filename = config['input_grn_filename']
+    input_grn = pd.read_csv(os.path.join(tissue_dir_path, input_grn_filename))
+
+    # Get the targets
     targets = config['targets']  # List of gene names ['gene0', 'gene1', ...]
 
+    # Get the batch id
     batch_id = config['batch_id']
 
     if verbosity > 0:
         print(f'# ### Computing classical FDR for tissue: {tissue_name}, batch: {batch_id}')
 
-    fdr_grn = None
+    fdr_grn = grnboost2_fdr(
+        expression_data=expression_mat,
+        cluster_representative_mode='all_genes',
+        num_non_tf_clusters=-1,
+        num_tf_clusters=-1,
+        input_grn=input_grn,
+        tf_names=None,
+        target_names=targets,  # Todo: implement option to pass targets
+        client_or_address = 'local',
+        seed=42,
+        verbose=False,
+        num_permutations=1000,
+        output_dir=None
+    )
 
-    return
+    # Create subdir for saving
+    save_dir = os.path.join(tissue_dir_path, 'batch_wise_fdr_grns')
+    os.makedirs(save_dir, exist_ok=True)
+
+    # Save fdr controlled grn for target batch
+    fdr_grn.to_csv(os.path.join(save_dir, f'fdr_grn_batch_{batch_id}.csv'), index=False)
+
+    return fdr_grn
 
 
 if __name__ == '__main__':
 
     gtex_path = os.path.join(os.getcwd(), 'data/gtex_tissues_preprocessed')
+
+    # Compute the input GRNs
+    compute_input_grns(gtex_dir=gtex_path, verbosity=1)
+
+
+    # Generate the config files
     config_dir = os.path.join(os.getcwd(), 'config')
     bs = 100
 
     generate_batch_configs(gtex_dir=gtex_path, batch_size=bs, save_dir=config_dir, verbosity=1)
+
+    # Then call array job with compute_classical_fdr_grn() and all the configs ...
 
     print('done')
