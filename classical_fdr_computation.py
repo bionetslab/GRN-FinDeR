@@ -7,8 +7,10 @@
 import os
 import copy
 import yaml
+import argparse
 import pandas as pd
 
+from codecarbon import OfflineEmissionsTracker
 from arboreto.algo import grnboost2, grnboost2_fdr
 
 
@@ -153,18 +155,39 @@ def compute_classical_fdr(config: dict, verbosity: int = 0) -> pd.DataFrame:
 
 if __name__ == '__main__':
 
-    gtex_path = os.path.join(os.getcwd(), 'data/gtex_tissues_preprocessed')
+    # Set flag whether to do input GRN computation and config generation or run classical FDR control
+    fdr = False
 
-    # Compute the input GRNs
-    compute_input_grns(gtex_dir=gtex_path, verbosity=1)
+    if not fdr:
+
+        gtex_path = './data/gtex_tissues_preprocessed'
+
+        # Compute the input GRNs
+        compute_input_grns(gtex_dir=gtex_path, verbosity=1)
 
 
-    # Generate the config files
-    config_dir = os.path.join(os.getcwd(), 'config')
-    bs = 100
+        # Generate the config files
+        config_dir = './config'
+        bs = 100
 
-    generate_batch_configs(gtex_dir=gtex_path, batch_size=bs, save_dir=config_dir, verbosity=1)
+        generate_batch_configs(gtex_dir=gtex_path, batch_size=bs, save_dir=config_dir, verbosity=1)
 
-    # Then call array job with compute_classical_fdr_grn() and all the configs ...
+        print('done')
 
-    print('done')
+    else:
+        parser = argparse.ArgumentParser(description="Process a config file from the command line.")
+
+        # Add the file argument
+        parser.add_argument('-f', type=str, help='The config file to process')
+
+        # Parse the arguments
+        args = parser.parse_args()
+
+        with open(args.f, 'r') as f:
+            cfg = yaml.safe_load(f)
+
+        emissions_file = os.path.join(cfg['tissue_data_path'], f'{cfg['tissue_name']}_emissions.csv')
+
+        with OfflineEmissionsTracker(country_iso_code="DEU", output_file=emissions_file, log_level='error',
+                                     measure_power_secs=600) as tracker:
+            compute_classical_fdr(config=cfg, verbosity=1)
