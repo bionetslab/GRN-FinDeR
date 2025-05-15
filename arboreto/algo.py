@@ -51,7 +51,8 @@ def grnboost2_fdr(
         input_grn = grnboost2(
             expression_data=expression_data,
             tf_names=tf_names,
-            client_or_address=client_or_address
+            client_or_address=client_or_address,
+            seed=seed,
         )
 
     # Align the input GRN and expression data w.r.t. the genes
