@@ -15,6 +15,7 @@ def grnboost2_fdr(
         num_tf_clusters : int = -1,
         input_grn : dict = None,
         tf_names : list[str] = None,
+        target_subset : list[str] = None,
         client_or_address='local',
         early_stop_window_length=EARLY_STOP_WINDOW_LENGTH,
         seed=None,
@@ -24,6 +25,9 @@ def grnboost2_fdr(
 ):
     if cluster_representative_mode not in {'medoid', 'random', 'all_genes'}:
         raise ValueError('cluster_representative_mode must be one of "medoid", "random", "all_genes"')
+
+    if target_subset is not None and cluster_representative_mode != 'all_genes':
+        raise ValueError("Target subset is given, but is only compatible with all_genes FDR mode.")
 
     if num_non_tf_clusters==-1 and num_tf_clusters==-1 and not cluster_representative_mode == "all_genes":
         print("No cluster numbers given, running full FDR mode...")
@@ -46,7 +50,8 @@ def grnboost2_fdr(
         input_grn = grnboost2(
             expression_data=expression_data,
             tf_names=tf_names,
-            client_or_address=client_or_address
+            client_or_address=client_or_address,
+            seed=seed
         )
 
     # Align the input GRN and expression data w.r.t. the genes
@@ -75,6 +80,7 @@ def grnboost2_fdr(
         num_tf_clusters,
         cluster_representative_mode,
         tf_names_input_grn,
+        target_subset,
         client_or_address,
         early_stop_window_length,
         seed,
