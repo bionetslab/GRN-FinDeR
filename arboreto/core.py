@@ -350,7 +350,8 @@ def retry(fn, max_retries=10, warning_msg=None, fallback_result=None):
 #                  fallback_result=fallback_result,
 #                  warning_msg='WARNING: infer_data failed for target {0}'.format(target_gene_name))
 
-_GRN_SCHEMA = make_meta({'TF': str, 'target': str, 'importance': float, 'count': float})
+_FDR_SCHEMA = make_meta({'TF': str, 'target': str, 'importance': float, 'count': float})
+_GRN_SCHEMA = make_meta({'TF' : str, 'target' : str, 'importance' : float})
 _META_SCHEMA = make_meta({'target': str, 'n_estimators': int})
 
 # ### TODO: infer partial network for original, medoid, and random
@@ -1030,7 +1031,7 @@ def create_graph_fdr(expression_matrix : np.ndarray,
         raise ValueError(f'Unknown FDR mode: {fdr_mode}.')
 
     # Gather the DataFrames into one distributed DataFrame.
-    all_links_df = from_delayed(delayed_link_dfs, meta=_GRN_SCHEMA)
+    all_links_df = from_delayed(delayed_link_dfs, meta=_FDR_SCHEMA)
     # all_links_df = pd.concat(delayed_link_dfs, ignore_index=True)
 
     # [2] repartition to nr of workers -> important to avoid GC problems!

@@ -187,7 +187,7 @@ if __name__ == '__main__':
         res_dir = './results'
 
         # Compute the input GRNs
-        # compute_input_grns(gtex_dir=gtex_path, results_dir=res_dir, verbosity=1)
+        compute_input_grns(gtex_dir=gtex_path, results_dir=res_dir, verbosity=1)
 
         # Generate the config files
         cfg_dir = './config'
