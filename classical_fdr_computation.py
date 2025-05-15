@@ -14,7 +14,11 @@ from codecarbon import OfflineEmissionsTracker
 from arboreto.algo import grnboost2, grnboost2_fdr
 
 
-def compute_input_grns(gtex_dir: str, verbosity: int = 0):
+def compute_input_grns(gtex_dir: str, results_dir: str | None, verbosity: int = 0):
+
+    if results_dir is None:
+        results_dir = os.path.join(os.getcwd(), 'results')
+    os.makedirs(results_dir, exist_ok=True)
 
     tissue_dirs = sorted(os.listdir(gtex_dir))
 
@@ -34,7 +38,7 @@ def compute_input_grns(gtex_dir: str, verbosity: int = 0):
 
         target_filename = f'{tissue_dir}_target_genes.tsv'
         target_df = pd.read_csv(os.path.join(tissue_dir_path, target_filename), index_col=0)
-        tf_list = set(expression_mat.columns) - set(target_df['target_gene'])
+        tf_list = set(all_genes) - set(target_df['target_gene'])
 
         input_grn = grnboost2(
             expression_data=expression_mat,
@@ -44,14 +48,26 @@ def compute_input_grns(gtex_dir: str, verbosity: int = 0):
             verbose=False,
         )
 
-        input_grn.to_csv(os.path.join(tissue_dir_path, f'{tissue_dir}_input_grn.csv'), index=False)
+        output_dir_path = os.path.join(results_dir, tissue_dir)
+        os.makedirs(output_dir_path, exist_ok=True)
+
+        input_grn.to_csv(os.path.join(output_dir_path, f'{tissue_dir}_input_grn.csv'), index=False)
 
 
-def generate_batch_configs(gtex_dir: str, batch_size: int, save_dir: str | None, verbosity: int = 0) -> None:
+def generate_batch_configs(
+        gtex_dir: str,
+        batch_size: int,
+        config_dir: str | None,
+        results_dir: str | None,
+        verbosity: int = 0
+) -> None:
 
-    if save_dir is None:
-        save_dir = os.getcwd()
-    os.makedirs(save_dir, exist_ok=True)
+    if config_dir is None:
+        config_dir = os.getcwd()
+    os.makedirs(config_dir, exist_ok=True)
+
+    if results_dir is None:
+        results_dir = os.path.join(os.getcwd(), 'results')
 
     config = dict()
 
@@ -65,11 +81,12 @@ def generate_batch_configs(gtex_dir: str, batch_size: int, save_dir: str | None,
         tissue_dir_path = os.path.join(gtex_dir, tissue_dir)
 
         expression_mat_filename = f'{tissue_dir}.tsv'
-        input_grn_filename = f'{tissue_dir}_input_grn.tsv'
+        input_grn_filename = f'{tissue_dir}_input_grn.csv'
 
         config['tissue_name'] = tissue_dir
         config['tissue_data_path'] = tissue_dir_path
         config['expression_mat_filename'] = expression_mat_filename
+        config['results_dir'] = results_dir
         config['input_grn_filename'] = input_grn_filename
 
         expression_mat = pd.read_csv(os.path.join(tissue_dir_path, expression_mat_filename), sep='\t', index_col=0)
@@ -92,7 +109,7 @@ def generate_batch_configs(gtex_dir: str, batch_size: int, save_dir: str | None,
             batch_config['batch_id'] = batch_id
 
             batch_config_filename = f'{config['tissue_name']}_{batch_id}.yaml'
-            save_path = os.path.join(save_dir, batch_config_filename)
+            save_path = os.path.join(config_dir, batch_config_filename)
 
             with open(save_path, 'w') as f:
                 yaml.dump(batch_config, f, default_flow_style=False)
@@ -116,8 +133,9 @@ def compute_classical_fdr(config: dict, verbosity: int = 0) -> pd.DataFrame:
     expression_mat = pd.read_csv(os.path.join(tissue_dir_path, expression_mat_filename), sep='\t', index_col=0)
 
     # Load the input GRN
-    input_grn_filename = config['input_grn_filename']
-    input_grn = pd.read_csv(os.path.join(tissue_dir_path, input_grn_filename))
+    results_dir = config['results_dir']
+    grn_path = os.path.join(results_dir, tissue_name, config['input_grn_filename'])
+    input_grn = pd.read_csv(grn_path)
 
     # Get the targets
     targets = config['targets']  # List of gene names ['gene0', 'gene1', ...]
@@ -161,16 +179,16 @@ if __name__ == '__main__':
     if not fdr:
 
         gtex_path = './data/gtex_tissues_preprocessed'
+        res_dir = './results'
 
         # Compute the input GRNs
-        compute_input_grns(gtex_dir=gtex_path, verbosity=1)
-
+        compute_input_grns(gtex_dir=gtex_path, results_dir=res_dir, verbosity=1)
 
         # Generate the config files
-        config_dir = './config'
+        cfg_dir = './config'
         bs = 100
 
-        generate_batch_configs(gtex_dir=gtex_path, batch_size=bs, save_dir=config_dir, verbosity=1)
+        generate_batch_configs(gtex_dir=gtex_path, batch_size=bs, config_dir=cfg_dir, results_dir=res_dir, verbosity=1)
 
         print('done')
 
