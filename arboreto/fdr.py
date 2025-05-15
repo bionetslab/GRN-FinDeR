@@ -91,7 +91,7 @@ def perform_fdr(
                    are_tfs_clustered=are_tfs_clustered,
                    tf_representatives=tf_representatives,
                    non_tf_representatives=non_tf_representatives,
-                   target_subset=target_batch,
+                   target_batch=target_batch,
                    gene_to_cluster=all_gene_clustering,
                    input_grn=input_grn,
                    client_or_address=client_or_address,
