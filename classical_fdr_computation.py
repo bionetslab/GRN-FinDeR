@@ -179,10 +179,15 @@ if __name__ == '__main__':
     if not fdr:
 
         gtex_path = './data/gtex_tissues_preprocessed'
+        alternate_gtex_path = f'/home/woody/iwbn/iwbn107h/gtex'
+
+        if not os.path.exists(gtex_path):
+            gtex_path = alternate_gtex_path
+
         res_dir = './results'
 
         # Compute the input GRNs
-        compute_input_grns(gtex_dir=gtex_path, results_dir=res_dir, verbosity=1)
+        # compute_input_grns(gtex_dir=gtex_path, results_dir=res_dir, verbosity=1)
 
         # Generate the config files
         cfg_dir = './config'
