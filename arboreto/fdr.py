@@ -19,7 +19,6 @@ def perform_fdr(
         num_tf_clusters : int,
         cluster_representative_mode : str,
         tf_names,
-        target_batch,
         client_or_address,
         early_stop_window_length,
         seed,
@@ -42,9 +41,9 @@ def perform_fdr(
     if num_non_tf_clusters == -1:
         num_non_tf_clusters = len(non_tf_names)
 
+    # No clustering necessary, just create 'dummy' clustering with singleton clusters.
     tf_representatives = []
     non_tf_representatives = []
-    # No clustering necessary, just create 'dummy' clustering with singleton clusters.
     if cluster_representative_mode == 'all_genes':
         all_gene_clustering=None
         tf_representatives = tf_names
@@ -91,7 +90,6 @@ def perform_fdr(
                    are_tfs_clustered=are_tfs_clustered,
                    tf_representatives=tf_representatives,
                    non_tf_representatives=non_tf_representatives,
-                   target_batch=target_batch,
                    gene_to_cluster=all_gene_clustering,
                    input_grn=input_grn,
                    client_or_address=client_or_address,
@@ -109,7 +107,6 @@ def diy_fdr(expression_data,
             are_tfs_clustered,
             tf_representatives,
             non_tf_representatives,
-            target_batch,
             gene_to_cluster,
             input_grn,
             gene_names=None,
@@ -181,7 +178,6 @@ def diy_fdr(expression_data,
                                  are_tfs_clustered=are_tfs_clustered,
                                  tf_representatives=tf_representatives,
                                  non_tf_representatives=non_tf_representatives,
-                                 target_batch=target_batch,
                                  gene_to_cluster=gene_to_cluster,
                                  input_grn=input_grn,
                                  per_target_importance_sums=per_target_importance_sums,
@@ -213,7 +209,6 @@ def create_graph_fdr(expression_matrix: np.ndarray,
                      are_tfs_clustered,
                      tf_representatives: list[str],
                      non_tf_representatives: list[str],
-                     target_batch : list[str],
                      gene_to_cluster: dict[str, int],
                      input_grn: dict,
                      per_target_importance_sums: dict,
@@ -358,11 +353,7 @@ def create_graph_fdr(expression_matrix: np.ndarray,
     # Use pre-computed medoid representatives for TFs and/or non-TFs.
     if fdr_mode == 'medoid':
         # Loop over all representative targets, i.e. non-TF medoids.
-        all_targets = non_tf_representatives+tf_representatives
-        # Only process target gene batch if given in full FDR mode.
-        if target_batch is not None:
-            all_targets = target_batch
-        for target_gene_index in target_gene_indices(gene_names, all_targets):
+        for target_gene_index in target_gene_indices(gene_names, non_tf_representatives + tf_representatives):
             target_gene_name = gene_names[target_gene_index]
             target_gene_expression = delayed(expression_matrix[:, target_gene_index])
             target_subset_grn = delayed(grn_subsets_per_target[gene_to_cluster[target_gene_name]])
