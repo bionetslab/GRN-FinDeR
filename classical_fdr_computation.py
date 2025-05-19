@@ -162,7 +162,7 @@ def compute_classical_fdr(config: dict, verbosity: int = 0) -> pd.DataFrame:
     )
 
     # Create subdir for saving
-    save_dir = os.path.join(tissue_dir_path, 'batch_wise_fdr_grns')
+    save_dir = os.path.join(results_dir, tissue_name, 'batch_wise_fdr_grns')
     os.makedirs(save_dir, exist_ok=True)
 
     # Save fdr controlled grn for target batch
