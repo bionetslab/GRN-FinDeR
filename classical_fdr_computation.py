@@ -8,6 +8,7 @@ import os
 import copy
 import yaml
 import argparse
+import time
 import pandas as pd
 
 from codecarbon import OfflineEmissionsTracker
@@ -146,24 +147,39 @@ def compute_classical_fdr(config: dict, verbosity: int = 0) -> pd.DataFrame:
     if verbosity > 0:
         print(f'# ### Computing classical FDR for tissue: {tissue_name}, batch: {batch_id}')
 
-    fdr_grn = grnboost2_fdr(
-        expression_data=expression_mat,
-        cluster_representative_mode='all_genes',
-        num_non_tf_clusters=-1,
-        num_tf_clusters=-1,
-        input_grn=input_grn,
-        tf_names=None,
-        target_subset=targets,
-        client_or_address = 'local',
-        seed=42,
-        verbose=False,
-        num_permutations=1000,
-        output_dir=None
-    )
 
     # Create subdir for saving
     save_dir = os.path.join(results_dir, tissue_name, 'batch_wise_fdr_grns')
     os.makedirs(save_dir, exist_ok=True)
+
+    emissions_file = os.path.join(save_dir, f'emissions_batch_{batch_id}.csv')
+
+    with OfflineEmissionsTracker(
+            country_iso_code="DEU", output_file=emissions_file, log_level='error', measure_power_secs=600
+    ) as tracker:
+
+        st = time.time()
+        fdr_grn = grnboost2_fdr(
+            expression_data=expression_mat,
+            cluster_representative_mode='all_genes',
+            num_non_tf_clusters=-1,
+            num_tf_clusters=-1,
+            input_grn=input_grn,
+            tf_names=None,
+            target_subset=targets,
+            client_or_address = 'local',
+            seed=42,
+            verbose=False,
+            num_permutations=1000,
+            output_dir=None
+        )
+        et = time.time()
+
+    elapsed_time = et - st
+
+    time_file = os.path.join(save_dir, f'time_batch_{batch_id}.txt')
+    with open(time_file, 'w') as f:
+        f.write(str(elapsed_time))
 
     # Save fdr controlled grn for target batch
     fdr_grn.to_csv(os.path.join(save_dir, f'fdr_grn_batch_{batch_id}.csv'), index=False)
@@ -209,8 +225,4 @@ if __name__ == '__main__':
         with open(args.f, 'r') as f:
             cfg = yaml.safe_load(f)
 
-        emissions_file = os.path.join(cfg['tissue_data_path'], f'{cfg['tissue_name']}_emissions.csv')
-
-        with OfflineEmissionsTracker(country_iso_code="DEU", output_file=emissions_file, log_level='error',
-                                     measure_power_secs=600) as tracker:
-            compute_classical_fdr(config=cfg, verbosity=1)
+        compute_classical_fdr(config=cfg, verbosity=1)
