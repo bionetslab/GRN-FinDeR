@@ -153,7 +153,7 @@ def compute_classical_fdr(config: dict, verbosity: int = 0) -> pd.DataFrame:
         num_tf_clusters=-1,
         input_grn=input_grn,
         tf_names=None,
-        target_batch=targets,
+        target_subset=targets,
         client_or_address = 'local',
         seed=42,
         verbose=False,
@@ -174,7 +174,7 @@ def compute_classical_fdr(config: dict, verbosity: int = 0) -> pd.DataFrame:
 if __name__ == '__main__':
 
     # Set flag whether to do input GRN computation and config generation or run classical FDR control
-    fdr = False
+    fdr = True
 
     if not fdr:
 
