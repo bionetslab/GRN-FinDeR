@@ -57,7 +57,7 @@ def generate_configs(
                 param_combination_config['num_clusters_non_tfs'] = i
                 param_combination_config['num_clusters_tfs'] = j
 
-                config_filename = f'{config['tissue_name']}_config_{i}_{j}.yml'
+                config_filename = f'{config['tissue_name']}_config_{i}_{j}.yaml'
                 save_path = os.path.join(config_dir, config_filename)
 
                 with open(save_path, 'w') as f:
@@ -147,12 +147,19 @@ if __name__ == '__main__':
         res_dir = './results'
 
         # Generate the config files
-        cfg_dir = './config_approx_fdr'
+        cfg_dir = './configs_approx_fdr'
 
         nc_non_tfs = list(range(1, 10)) + list(range(10, 100, 10)) + list(range(100, 1001, 100))
         nc_tfs = [-1, ]  # + list(range(1, 10)) + list(range(10, 100, 10)) + list(range(100, 1001, 100))
 
-        generate_configs(gtex_dir=gtex_path, config_dir=cfg_dir, results_dir=res_dir, verbosity=1)
+        generate_configs(
+            gtex_dir=gtex_path,
+            num_clusters_non_tfs=nc_non_tfs,
+            num_clusters_tfs=nc_tfs,
+            config_dir=cfg_dir,
+            results_dir=res_dir,
+            verbosity=1
+        )
 
         print('done')
 
