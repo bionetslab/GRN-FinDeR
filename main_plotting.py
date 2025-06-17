@@ -376,13 +376,49 @@ def plot_speedup(
 def plot_saved_emissions(
         results_df: pd.DataFrame,
         col_names_mapping: dict[str, str],
+        tissue_to_color: dict[str, tuple[float, float, float]] | None = None,
+        log10_x: bool = False,
         ax: plt.Axes = None,
 ) -> plt.Axes:
 
-
-
     if ax is None:
         fig, ax = plt.subplots(dpi=300)
+
+    col_names_mapping = col_names_mapping.copy()
+    results_df = results_df.copy()
+    results_df = results_df.rename(columns=col_names_mapping)
+
+    # Convert x-axis values to log10-scale if flag is set
+    x_key = 'num_non_tfs'
+    if log10_x:
+        results_df['log10(Number of non-TF Clusters)'] = np.log10(results_df[col_names_mapping[x_key]])
+        x_key = 'log10(Number of non-TF Clusters)'
+        col_names_mapping[x_key] = x_key
+
+    sns.lineplot(
+        data=results_df,
+        x=col_names_mapping[x_key],
+        y=col_names_mapping['abs_emission_saving'],
+        hue=col_names_mapping['tissue'],
+        palette=tissue_to_color,
+        ax=ax,
+    )
+
+    # Set log10-scale x-ticks
+    if log10_x:
+        # Remove existing x-ticks
+        ax.set_xticks([])
+
+        # Set custom x-ticks
+        labels = np.array(list(range(1,10, 1)) + list(range(10,100, 10)) + list(range(100,1001, 100)))
+        pos = np.log10(labels)
+
+        ax.set_xticks(pos)
+        ax.set_xticklabels([str(l) if l in [10, 100, 1000] else '' for l in labels])
+
+    ax.legend().remove()
+
+    # ax.set_title('Saved Emissions')
 
     return ax
 
@@ -411,7 +447,7 @@ def plot_runtime_meta():
         'mae': 'MAE',
         'f1_score': 'F1 Score', 'alpha_level': 'Alpha',
         'abs_time_saving': 'Saved Time [hours]', 'rel_time_saving': 'Speedup Factor',
-        'abs_emission_saving': 'Saved Emissions', 'rel_emission_saving': 'Emissions Saved',
+        'abs_emission_saving': 'Saved Emissions [gram C02]', 'rel_emission_saving': 'Emissions Saved',
         'total_runtime': 'Runtime [hours]'
     }
 
@@ -495,7 +531,7 @@ def plot_performance_meta():
         'mae': 'MAE',
         'f1_score': 'F1 Score', 'alpha_level': 'Alpha',
         'abs_time_saving': 'Saved Time [hours]', 'rel_time_saving': 'Speedup Factor',
-        'abs_emission_saving': 'Saved Emissions', 'rel_emission_saving': 'Emissions Saved',
+        'abs_emission_saving': 'Saved Emissions [gram C02]', 'rel_emission_saving': 'Emissions Saved',
         'total_runtime': 'Runtime [hours]'
     }
 
@@ -581,7 +617,73 @@ def plot_performance_meta():
     plt.close('all')
 
 
+def plot_emission_meta():
 
+    res_dir = './results/gtex_up_to_breast'
+
+    res_df = pd.read_csv(os.path.join(res_dir, 'approximate_fdr_grns_medoid_results.csv'))
+
+    # Melt the dataframe to long format for F1 scores, add column with alpha level
+    res_df = res_df.melt(
+        id_vars=[
+            "tissue", "num_non_tfs", "num_tfs", "mae", "abs_time_saving", "rel_time_saving", "abs_emission_saving",
+            "rel_emission_saving", "total_runtime"
+        ],
+        value_vars=["f1_005", "f1_001"],
+        var_name="alpha_level",
+        value_name="f1_score"
+    )
+    res_df["alpha_level"] = res_df["alpha_level"].str.extract(r"f1_(\d+)").astype(float) / 1000
+
+    old_to_new_col_names = {
+        'tissue': 'Tissue',
+        'num_non_tfs': 'Number of non-TF Clusters', 'num_tfs': 'Number of TF Clusters',
+        'mae': 'MAE',
+        'f1_score': 'F1 Score', 'alpha_level': 'Alpha',
+        'abs_time_saving': 'Saved Time [hours]', 'rel_time_saving': 'Speedup Factor',
+        'abs_emission_saving': 'Saved Emissions [gram C02]', 'rel_emission_saving': 'Emissions Saved',
+        'total_runtime': 'Runtime [hours]'
+    }
+
+    save_dir = './results/plots'
+    os.makedirs(save_dir, exist_ok=True)
+
+    fig = plt.figure(figsize=(8, 3), constrained_layout=True, dpi=300)
+    axd = fig.subplot_mosaic(
+        """
+        AB
+        """
+    )
+
+    # Define color mapping
+    all_tissues = sorted(res_df['tissue'].unique())
+    palette = sns.color_palette('tab20', n_colors=len(all_tissues))  # Or your preferred palette
+    tissue_to_color = dict(zip(all_tissues, palette))
+
+    plot_saved_emissions(
+        results_df=res_df,
+        col_names_mapping=old_to_new_col_names,
+        log10_x=True,
+        tissue_to_color=tissue_to_color,
+        ax=axd['A']
+    )
+
+    # Build a legend
+    handles, labels = axd['A'].get_legend_handles_labels()
+    axd['B'].legend(
+        handles,
+        labels,
+        title='Tissue',
+        frameon=False,
+        ncol=2,
+        loc='center'
+    )
+    axd['B'].axis('off')
+
+    annotate_mosaic(fig=fig, axd=axd, fontsize=None)
+
+    plt.savefig(os.path.join(save_dir, 'emission.png'))
+    plt.close('all')
 
 
 if __name__ == '__main__':
@@ -589,5 +691,7 @@ if __name__ == '__main__':
     plot_runtime_meta()
 
     plot_performance_meta()
+
+    plot_emission_meta()
 
     print('done')
