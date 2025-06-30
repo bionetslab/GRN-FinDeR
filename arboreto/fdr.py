@@ -84,7 +84,7 @@ def perform_fdr(
         with open(os.path.join(output_dir, 'non_tf_medoids.pkl'), 'wb') as f:
             pickle.dump(non_tf_representatives, f)
 
-    return diy_fdr(expression_data=expression_data,
+    fdr_controlled_df = diy_fdr(expression_data=expression_data,
                    regressor_type='GBM',
                    regressor_kwargs=SGBM_KWARGS,
                    gene_names=gene_names,
@@ -101,6 +101,11 @@ def perform_fdr(
                    n_permutations=num_permutations,
                    output_dir=output_dir
                    )
+    # Transform counts into P-values and remove count column.
+    fdr_controlled_df['pvalue'] = (fdr_controlled_df['count']+1)/(num_permutations+1)
+    fdr_controlled_df.drop(columns=['count'], inplace=True)
+    return fdr_controlled_df
+
 
 
 def diy_fdr(expression_data,
@@ -471,9 +476,10 @@ def count_computation_medoid_representative(
         val.update({'count': 0.0})
 
     # Iterate for num permutations
-    for _ in range(n_permutations):
+    for i in range(n_permutations):
 
         # Shuffle target gene expression vector
+        np.random.seed(i)
         permuted_target_gene_expression = np.random.permutation(target_gene_expression)
 
         # Train the random forest regressor
@@ -581,6 +587,7 @@ def count_computation_sampled_representative(
             raise ValueError("Cleaned TF matrix is empty, skipping inference of target {}.".format(target_gene_name))
 
         # Shuffle target gene expression vector
+        np.random.seed(perm)
         permuted_target_gene_expression = np.random.permutation(target_expression)
 
         # Train the random forest regressor.
