@@ -170,7 +170,7 @@ def subset_tf_matrix(tf_matrix : np.ndarray,
 def count_helper(
         shuffled_grn: pd.DataFrame,
         partial_input_grn: dict[str, dict[str, float]],
-        gene_to_clust: dict[str, int],
+        tf_to_cluster: dict[str, int],
 ) -> None:
     """
     Computes empirical counts for all edges in input GRN based on given decoy edges.
@@ -187,13 +187,13 @@ def count_helper(
     # TFs have not been clustered (i.e. each TF has one dummy cluster) or if TFs have been clustered, then
     # each TF cluster has exactly one representative and hence can only appear once in shuffled output GRN.
     shuffled_grn_tf_cluster_to_importance = {
-        gene_to_clust[tf]: imp for tf, imp in zip(shuffled_grn['TF'], shuffled_grn['importance'])
+        tf_to_cluster[tf]: imp for tf, imp in zip(shuffled_grn['TF'], shuffled_grn['importance'])
     }
 
     for (tf, _), val in partial_input_grn.items():
-        if gene_to_clust[tf] in shuffled_grn_tf_cluster_to_importance:
+        if tf_to_cluster[tf] in shuffled_grn_tf_cluster_to_importance:
             importance_input = val['importance']
-            importance_shuffled = shuffled_grn_tf_cluster_to_importance[gene_to_clust[tf]]
+            importance_shuffled = shuffled_grn_tf_cluster_to_importance[tf_to_cluster[tf]]
 
             if importance_shuffled >= importance_input:
                 val['count'] += 1
