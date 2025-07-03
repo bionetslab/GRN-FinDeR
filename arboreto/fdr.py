@@ -1,10 +1,7 @@
 
 import copy
-
-from requests.packages import target
-
 from arboreto.core import EARLY_STOP_WINDOW_LENGTH, SGBM_KWARGS, DEMON_SEED, to_tf_matrix, target_gene_indices, clean, fit_model, to_links_df
-from arboreto.fdr_utils import compute_wasserstein_distance_matrix, cluster_genes_to_dict, merge_gene_clusterings, compute_medoids, partition_input_grn, invert_tf_to_cluster_dict, count_helper, subset_tf_matrix, _prepare_client, _prepare_input
+from arboreto.fdr_utils import compute_correlation_distance_matrix, compute_wasserstein_distance_matrix, cluster_genes_to_dict, merge_gene_clusterings, compute_medoids, partition_input_grn, invert_tf_to_cluster_dict, count_helper, subset_tf_matrix, _prepare_client, _prepare_input
 import numpy as np
 import pandas as pd
 from dask import delayed, compute
@@ -54,20 +51,20 @@ def perform_fdr(
         tf_representatives = tf_names
         target_representatives = gene_names
         are_tfs_clustered = False
-    else: # Cluster genes based on Wasserstein distance.
+    else: # Cluster targets based on Wasserstein distance and TFs using correlation distance.
         # Compute full distance matrix between all pairs of input genes.
         dist_matrix_all = compute_wasserstein_distance_matrix(expression_data, num_threads=-1)
+
+        tf_bool = [True if gene in tf_names else False for gene in expression_data.columns]
+        exp_matrix_tfs = expression_data.loc[:, tf_bool]
+        corr_distances_tfs = compute_correlation_distance_matrix(exp_matrix_tfs)
 
         if not output_dir is None:
             dist_matrix_all.to_csv(os.path.join(output_dir, 'distance_matrix.csv'))
 
         # Separate TF and non-TF distances and cluster both types individually.
-        tf_bool = [True if gene in tf_names else False for gene in dist_matrix_all.columns]
-        dist_mat_all_genes = dist_matrix_all
-        dist_mat_tfs = dist_matrix_all.loc[tf_bool, tf_bool]
-
-        target_to_clust = cluster_genes_to_dict(dist_mat_all_genes, num_clusters=num_non_tf_clusters)
-        tf_to_clust = cluster_genes_to_dict(dist_mat_tfs, num_clusters=num_tf_clusters)
+        target_to_clust = cluster_genes_to_dict(dist_matrix_all, num_clusters=num_non_tf_clusters)
+        tf_to_clust = cluster_genes_to_dict(corr_distances_tfs, num_clusters=num_tf_clusters)
         # all_gene_clustering = merge_gene_clusterings(tf_to_clust, non_tf_to_clust)
 
         if not output_dir is None:
