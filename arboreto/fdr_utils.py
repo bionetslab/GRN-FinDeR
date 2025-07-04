@@ -85,6 +85,12 @@ def compute_wasserstein_distance_matrix(expression_mat: pd.DataFrame, num_thread
     distance_mat = pd.DataFrame(distance_mat, columns=expression_mat.columns)
     return distance_mat
 
+def compute_correlation_distance_matrix(exp_matrix : pd.DataFrame):
+    corr_matrix = np.corrcoef(exp_matrix.to_numpy(), rowvar=False)
+    scaled_corr_matrix = (corr_matrix+1.0) / 2.0
+    distance_mat = 1.0 - scaled_corr_matrix
+    distance_df = pd.DataFrame(distance_mat, columns=exp_matrix.columns)
+    return distance_df
 
 def cluster_genes_to_dict(distance_matrix : pd.DataFrame, num_clusters : int = 100) -> dict[str, int]:
     """
