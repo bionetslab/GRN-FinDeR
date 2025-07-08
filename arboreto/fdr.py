@@ -53,18 +53,18 @@ def perform_fdr(
         are_tfs_clustered = False
     else: # Cluster targets based on Wasserstein distance and TFs using correlation distance.
         # Compute full distance matrix between all pairs of input genes.
-        dist_matrix_all = compute_wasserstein_distance_matrix(expression_data, num_threads=-1)
+        #dist_matrix_all = compute_wasserstein_distance_matrix(expression_data, num_threads=-1)
 
         tf_bool = [True if gene in tf_names else False for gene in expression_data.columns]
         exp_matrix_tfs = expression_data.loc[:, tf_bool]
-        corr_distances_tfs = compute_correlation_distance_matrix(exp_matrix_tfs)
+        #corr_distances_tfs = compute_correlation_distance_matrix(exp_matrix_tfs)
 
-        if not output_dir is None:
-            dist_matrix_all.to_csv(os.path.join(output_dir, 'distance_matrix.csv'))
+        #if not output_dir is None:
+        #    dist_matrix_all.to_csv(os.path.join(output_dir, 'distance_matrix.csv'))
 
         # Separate TF and non-TF distances and cluster both types individually.
-        target_to_clust = cluster_genes_to_dict(dist_matrix_all, num_clusters=num_non_tf_clusters)
-        tf_to_clust = cluster_genes_to_dict(corr_distances_tfs, num_clusters=num_tf_clusters)
+        target_to_clust, target_medoids = cluster_genes_to_dict(expression_data, num_clusters=num_non_tf_clusters, mode='kmeans')
+        tf_to_clust, tf_medoids = cluster_genes_to_dict(exp_matrix_tfs, num_clusters=num_tf_clusters, mode='kmeans')
         # all_gene_clustering = merge_gene_clusterings(tf_to_clust, non_tf_to_clust)
 
         if not output_dir is None:
@@ -74,8 +74,8 @@ def perform_fdr(
                 pickle.dump(target_to_clust, f)
 
         if cluster_representative_mode == 'medoid':
-            tf_representatives = compute_medoids(tf_to_clust, dist_matrix_all)
-            target_representatives = compute_medoids(target_to_clust, dist_matrix_all)
+            tf_representatives = tf_medoids
+            target_representatives = target_medoids
         else: # cluster_representative_mode='random'
             tf_representatives = tf_names
             target_representatives = gene_names
