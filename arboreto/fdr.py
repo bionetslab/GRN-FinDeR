@@ -45,8 +45,8 @@ def perform_fdr(
     # No clustering necessary, just create 'dummy' clustering with singleton clusters.
     tf_representatives = []
     target_representatives = []
-    tf_to_clust = dict()
-    target_to_clust = dict()
+    tf_to_clust = None
+    target_to_clust = None
     if cluster_representative_mode == 'all_genes':
         tf_representatives = tf_names
         target_representatives = gene_names
