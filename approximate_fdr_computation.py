@@ -90,7 +90,8 @@ def compute_approximate_fdr(config: dict, verbosity: int = 0) -> pd.DataFrame:
         )
 
     # Create subdir for saving
-    save_dir = os.path.join(results_dir, tissue_name, 'approximate_fdr_grns')
+    fdr_mode = 'random'
+    save_dir = os.path.join(results_dir, tissue_name, f'approximate_fdr_grns_{fdr_mode}')
     os.makedirs(save_dir, exist_ok=True)
 
     emissions_file = os.path.join(save_dir, f'emissions_nontf_{num_clusters_non_tfs}_numtf_{num_clusters_tfs}.csv')
@@ -102,7 +103,7 @@ def compute_approximate_fdr(config: dict, verbosity: int = 0) -> pd.DataFrame:
         st = time.time()
         fdr_grn = grnboost2_fdr(
             expression_data=expression_mat,
-            cluster_representative_mode='medoid',
+            cluster_representative_mode=fdr_mode,
             num_non_tf_clusters=num_clusters_non_tfs,
             num_tf_clusters=num_clusters_tfs,
             input_grn=input_grn,
@@ -134,23 +135,23 @@ def compute_approximate_fdr(config: dict, verbosity: int = 0) -> pd.DataFrame:
 if __name__ == '__main__':
 
     # Set flag whether to do input GRN computation and config generation or run classical FDR control
-    fdr = False
+    fdr = True
 
     if not fdr:
 
         gtex_path = './data/gtex_tissues_preprocessed'
-        alternate_gtex_path = f'/home/woody/iwbn/iwbn107h/gtex'
+        alternate_gtex_path = f'/home/woody/iwbn/iwbn106h/gtex'
 
         if not os.path.exists(gtex_path):
             gtex_path = alternate_gtex_path
 
-        res_dir = './results'
+        res_dir = '/home/woody/iwbn/iwbn106h/gtex_fdr_results'
 
         # Generate the config files
-        cfg_dir = './configs_approx_fdr'
+        cfg_dir = '/home/woody/iwbn/iwbn106h/configs_approx_fdr'
 
-        nc_non_tfs = list(range(1, 10)) + list(range(10, 100, 10)) + list(range(100, 1001, 100))
-        nc_tfs = [-1, ]  # + list(range(1, 10)) + list(range(10, 100, 10)) + list(range(100, 1001, 100))
+        nc_non_tfs = list(range(1200, 4001, 200))
+        nc_tfs = [-1]
 
         generate_configs(
             gtex_dir=gtex_path,
