@@ -18,6 +18,8 @@ def perform_fdr(
         num_non_tf_clusters : int,
         num_tf_clusters : int,
         cluster_representative_mode : str,
+        target_cluster_mode : str,
+        tf_cluster_mode : str,
         tf_names,
         target_subset,
         client_or_address,
@@ -51,21 +53,33 @@ def perform_fdr(
         tf_representatives = tf_names
         target_representatives = gene_names
         are_tfs_clustered = False
-    else: # Cluster targets based on Wasserstein distance and TFs using correlation distance.
-        # Compute full distance matrix between all pairs of input genes.
-        #dist_matrix_all = compute_wasserstein_distance_matrix(expression_data, num_threads=-1)
+    else:
+        # In case of Wasserstein clustering on targets, compute whole distance matrix on all targets.
+        if target_cluster_mode == 'wasserstein':
+            dist_matrix_all = compute_wasserstein_distance_matrix(expression_data, num_threads=-1)
 
-        tf_bool = [True if gene in tf_names else False for gene in expression_data.columns]
-        exp_matrix_tfs = expression_data.loc[:, tf_bool]
-        #corr_distances_tfs = compute_correlation_distance_matrix(exp_matrix_tfs)
+        if tf_cluster_mode == 'correlation':
+            tf_bool = [True if gene in tf_names else False for gene in expression_data.columns]
+            exp_matrix_tfs = expression_data.loc[:, tf_bool]
+            corr_distances_tfs = compute_correlation_distance_matrix(exp_matrix_tfs)
 
-        #if not output_dir is None:
-        #    dist_matrix_all.to_csv(os.path.join(output_dir, 'distance_matrix.csv'))
+        # Cluster targets and TFs separately given respective mode.
+        if target_cluster_mode == 'kmeans':
+            target_to_clust, target_medoids = cluster_genes_to_dict(expression_data, num_clusters=num_non_tf_clusters,
+                                                                    mode='kmeans')
+        elif target_cluster_mode == 'wasserstein':
+            target_to_clust, target_medoids = cluster_genes_to_dict(dist_matrix_all, num_clusters=num_non_tf_clusters,
+                                                                    mode='distance')
+        else:
+            print(f'Unknown target cluster mode: {target_cluster_mode}')
 
-        # Separate TF and non-TF distances and cluster both types individually.
-        target_to_clust, target_medoids = cluster_genes_to_dict(expression_data, num_clusters=num_non_tf_clusters, mode='kmeans')
-        tf_to_clust, tf_medoids = cluster_genes_to_dict(exp_matrix_tfs, num_clusters=num_tf_clusters, mode='kmeans')
-        # all_gene_clustering = merge_gene_clusterings(tf_to_clust, non_tf_to_clust)
+        if tf_cluster_mode == 'correlation':
+            tf_to_clust, tf_medoids = cluster_genes_to_dict(corr_distances_tfs, num_clusters=num_tf_clusters, mode='distance')
+        elif tf_cluster_mode == 'kmeans':
+            tf_to_clust, tf_medoids = cluster_genes_to_dict(exp_matrix_tfs, num_clusters=num_tf_clusters,
+                                                            mode='distance')
+        else:
+            print(f'Unknown TF cluster mode: {tf_cluster_mode}')
 
         if not output_dir is None:
             with open(os.path.join(output_dir, 'tf_clustering.pkl'), 'wb') as f:
@@ -76,7 +90,7 @@ def perform_fdr(
         if cluster_representative_mode == 'medoid':
             tf_representatives = tf_medoids
             target_representatives = target_medoids
-        else: # cluster_representative_mode='random'
+        else: # In random mode, representatives are drawn from whole set of possible TFs and targets.
             tf_representatives = tf_names
             target_representatives = gene_names
 
