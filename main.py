@@ -2,7 +2,7 @@
 def debug_arboreto_fdr_groundtruth():
     import numpy as np
     import pandas as pd
-    from arboreto_fdr.algo import grnboost2_fdr# Import from arboreto_fdr !!!
+    from arboreto.algo import grnboost2_fdr# Import from arboreto_fdr !!!
     from arboreto.algo import grnboost2
 
     from src.distance_matrix import compute_wasserstein_distance_matrix
@@ -175,7 +175,7 @@ def debug_arboreto_fdr_random_tfs_unclustered():
 def debug_arboreto_fdr_medoids_tfs_clustered():
     import numpy as np
     import pandas as pd
-    from arboreto_fdr.algo import grnboost2_fdr# Import from arboreto_fdr !!!
+    from arboreto.algo import grnboost2_fdr# Import from arboreto_fdr !!!
     from arboreto.algo import grnboost2
 
     from src.distance_matrix import compute_wasserstein_distance_matrix
@@ -238,12 +238,12 @@ def debug_arboreto_fdr_medoids_tfs_clustered():
     are_tfs_clustered = True
     fdr_mode = 'medoid'
 
+    print("Running approx. FDR using GRNBoost2...")
     corrected_grn = grnboost2_fdr(expression_data=expr_mat,
-                                  are_tfs_clustered=are_tfs_clustered,
-                                  tf_representatives=tf_representatives,
-                                  non_tf_representatives=non_tf_representatives,
-                                  gene_to_cluster=gene_to_clust,
-                                  input_grn=input_grn,
+                                  cluster_representative_mode="medoid",
+                                  num_tf_clusters=NUM_CLUSTERS,
+                                  num_non_tf_clusters=NUM_CLUSTERS,
+                                  tf_names=tfs,
                                   )
 
     print(corrected_grn)
@@ -251,7 +251,7 @@ def debug_arboreto_fdr_medoids_tfs_clustered():
 def debug_arboreto_fdr_medoids_tfs_unclustered():
     import numpy as np
     import pandas as pd
-    from arboreto_fdr.algo import grnboost2_fdr# Import from arboreto_fdr !!!
+    from arboreto.algo import grnboost2_fdr# Import from arboreto_fdr !!!
     from arboreto.algo import grnboost2
 
     from src.distance_matrix import compute_wasserstein_distance_matrix
@@ -304,12 +304,12 @@ def debug_arboreto_fdr_medoids_tfs_unclustered():
     are_tfs_clustered = False
     fdr_mode = 'medoid'
 
+    print("Running GRNBoost2 approx. FDR...")
     corrected_grn = grnboost2_fdr(expression_data=expr_mat,
-                                  are_tfs_clustered=are_tfs_clustered,
-                                  tf_representatives=tf_representatives,
-                                  non_tf_representatives=non_tf_representatives,
-                                  gene_to_cluster=gene_to_clust,
-                                  input_grn=input_grn,
+                                  cluster_representative_mode="medoid",
+                                  num_tf_clusters=-1,
+                                  num_non_tf_clusters=NUM_CLUSTERS,
+                                  tf_names=tfs,
                                   )
 
     print(corrected_grn)
@@ -367,7 +367,8 @@ def main_mwe():
 
 if __name__ == '__main__':
 
-    debug_arboreto_fdr_groundtruth()
+    print("Running grn FDR with medoids and TFs unclustered!")
+    debug_arboreto_fdr_medoids_tfs_clustered()
 
     print('done')
 
