@@ -8,7 +8,7 @@ Our software extends the popular GRNBoost2/arboreto package and can be used as a
 
 
 
-![Schematic of the workflow](img/flowchart_grn_finder.svg-1.pdf)
+![Schematic of the workflow](/img/flowchart_grn_finder.svg-1.pdf)
 
 ## Installation
 ## Usage examples
