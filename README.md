@@ -6,9 +6,11 @@ We here provide the software implementing our novel strategy for reducing the co
 
 Our software extends the popular GRNBoost2/arboreto package and can be used as an add-on. It outputs a list of regulatory interactions, their importance scores, and empirical p-values, computed up to a user-defined significance threshold.
 
-## Installation
-[](img/flowchart_grn_finder.svg-1.pdf)
 
+
+![Schematic of the workflow](img/flowchart_grn_finder.svg-1.pdf)
+
+## Installation
 ## Usage examples
 
 TODO
