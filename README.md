@@ -16,6 +16,7 @@ As of now, we recommend installing the arboreto package separately (https://gith
 ```
 cp -R ./arboreto/* <PATH_TO_ARBORETO_REPO>/arboreto
 ```
+In case you experience any issues with the installation of arboreto, we additionally provide a conda environment file under `envs/environment.yml` which provides all dependencies to run our implementation on Linux.
 
 ## Usage examples
 
