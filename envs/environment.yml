@@ -1,4 +1,4 @@
-name: grn2
+name: grn
 channels:
   - conda-forge
   - bioconda
