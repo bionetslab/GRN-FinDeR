@@ -52,7 +52,7 @@ A more detailed description of the function parameters of our `grnboost2_fdr` fu
 - **tf_cluster_mode** (str, optional): How to cluster TFs, either by using Pearson correlation as distance ('correlation'),
             or using Wasserstein distance ('wasserstein').
 - **input_grn** (pd.DataFrame, optional): If an input GRN to perform FDR control on is given, pass this here as dataframe
-            with columns 'TF', 'target', 'importance'.
+            with columns 'TF', 'target', 'importance'. Otherwise an input GRN is inferred from the given expression data.
 - **target_subset** (list, optional): Subset of target genes to perform FDR control on.
 - tf_names: Optional list of transcription factors only used for input GRN inference.
             If None or 'all', the list of gene_names will be used.
@@ -66,4 +66,6 @@ A more detailed description of the function parameters of our `grnboost2_fdr` fu
 - param num_permutations: Number of permutations to run for empirical P-value computation.
 - output_dir: Directory where to write intermediate results to.
 
-All parameters that have been added / changed compared to the grnboost2() function in `arboreto/algo.py` are listed above in **bold** font. Our grnboost2_fdr() function returns a pandas DataFrame with columns `TF, target, importance, pvalue` representing the FDR-controlled gene regulatory links.
+All parameters that have been added / changed compared to the grnboost2() function in `arboreto/algo.py` are listed above in **bold** font. 
+
+Our grnboost2_fdr() function returns a pandas DataFrame with columns `TF, target, importance, pvalue` representing the FDR-controlled gene regulatory links. In case you have given a GRN as input, only the `pvalue` column is added to the input dataframe, otherwise a new GRN is inferred from the given expression data.
