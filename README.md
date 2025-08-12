@@ -24,19 +24,26 @@ An example call to our FDR control without an input GRN includes the following s
 
 ```python
 import pandas as pd
-from arboreto.algo import grnboost2_fdr
+from arboreto.algo import grnboost2_fdr, grnboost2
+import numpy as np
 
 # Load expression matrix - in this case simulate one.
 exp_data = np.random.randn(100, 10)
-exp_df = pd.DataFrame(data, columns=columns)
+exp_df = pd.DataFrame(exp_data)
+
+exp_df.columns = [f'Gene{i}' for i in range(exp_df.shape[1])]
+
+# RUN standard GRN boost to obtain network
+network = grnboost2(expression_data=exp_df)
 
 # Run approximate FDR control.
 fdr_grn = grnboost2_fdr(
             expression_data=exp_df,
             cluster_representative_mode="random",
             num_target_clusters=5,
-            num_tf_clusters=-1
-)
+            num_tf_clusters=-1,
+            input_grn=network
+        )
 ```
 
 ## Parameter Details & IO Format
