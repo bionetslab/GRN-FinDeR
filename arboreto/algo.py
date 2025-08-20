@@ -23,7 +23,8 @@ def grnboost2_fdr(
         seed=None,
         verbose=False,
         num_permutations=1000,
-        output_dir=None
+        output_dir=None,
+        scale_for_tf_sampling : bool = False
 ):
     """
         :param expression_data: Expression matrix as pandas dataframe with genes as columns, samples as columns.
@@ -113,7 +114,8 @@ def grnboost2_fdr(
         seed,
         verbose,
         num_permutations,
-        output_dir
+        output_dir,
+        scale_for_tf_sampling
     )
 
 
