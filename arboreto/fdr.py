@@ -1,6 +1,7 @@
 
 import copy
-from arboreto.core import EARLY_STOP_WINDOW_LENGTH, SGBM_KWARGS, DEMON_SEED, to_tf_matrix, target_gene_indices, clean, fit_model, to_links_df
+from arboreto.core import EARLY_STOP_WINDOW_LENGTH, SGBM_KWARGS, DEMON_SEED, to_tf_matrix, target_gene_indices, clean, \
+    fit_model, to_links_df, RF_KWARGS, ET_KWARGS
 from arboreto.fdr_utils import compute_correlation_distance_matrix, compute_wasserstein_distance_matrix, cluster_genes_to_dict, merge_gene_clusterings, compute_medoids, partition_input_grn, invert_tf_to_cluster_dict, count_helper, subset_tf_matrix, _prepare_client, _prepare_input
 import numpy as np
 import pandas as pd
@@ -28,7 +29,8 @@ def perform_fdr(
         verbose,
         num_permutations,
         output_dir,
-        scale_for_tf_sampling
+        scale_for_tf_sampling,
+        regressor_type
 ):
     # Extract TF name and non-TF name lists from expression matrix object.
     expression_matrix, gene_names, tf_names = _prepare_input(expression_data, None, tf_names)
@@ -101,9 +103,18 @@ def perform_fdr(
         with open(os.path.join(output_dir, 'target_medoids.pkl'), 'wb') as f:
             pickle.dump(target_representatives, f)
 
+    if regressor_type == "GBM":
+        regressor_args = SGBM_KWARGS
+    elif regressor_type == "RF":
+        regressor_args = RF_KWARGS
+    elif regressor_type == "ET":
+        regressor_args = ET_KWARGS
+    else:
+        raise ValueError(f"Unknown regressor type: {regressor_type}")
+
     fdr_controlled_df = diy_fdr(expression_data=expression_data,
-                   regressor_type='GBM',
-                   regressor_kwargs=SGBM_KWARGS,
+                   regressor_type=regressor_type,
+                   regressor_kwargs=regressor_args,
                    gene_names=gene_names,
                    are_tfs_clustered=are_tfs_clustered,
                    tf_representatives=tf_representatives,

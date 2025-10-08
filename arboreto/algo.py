@@ -1,6 +1,7 @@
 """
 Top-level functions.
 """
+from multiprocessing.managers import Value
 
 import pandas as pd
 from distributed import Client, LocalCluster
@@ -24,7 +25,8 @@ def grnboost2_fdr(
         verbose=False,
         num_permutations=1000,
         output_dir=None,
-        scale_for_tf_sampling : bool = False
+        scale_for_tf_sampling : bool = False,
+        inference_mode : str = "grnboost2"
 ):
     """
         :param expression_data: Expression matrix as pandas dataframe with genes as columns, samples as columns.
@@ -47,6 +49,8 @@ def grnboost2_fdr(
         :param verbose: print info.
         :param num_permutations: Number of permutations to run for empirical P-value computation.
         :param output_dir: Directory where to write intermediate results to.
+        :param scale_for_tf_sampling: Whether to additionally report number of occurences of edges across all permutations.
+        :param inference_mode: Which underlying GRN inference tool to use, one of 'grnboost2', 'genie3', 'extra_trees'.
         :return: a pandas DataFrame['TF', 'target', 'importance', 'pvalue'] representing the FDR-controlled gene regulatory links.
     """
     if cluster_representative_mode not in {'medoid', 'random', 'all_genes'}:
@@ -99,6 +103,16 @@ def grnboost2_fdr(
     for tf, target, importance in zip(input_grn_aligned['TF'], input_grn_aligned['target'], input_grn_aligned['importance']):
         input_grn_dict[(tf, target)] = {'importance': importance}
 
+    # Pass underlying to-be-used GRN inference method.
+    if inference_mode == "grnboost2":
+        regressor_type = "GBM"
+    elif inference_mode == "genie3":
+        regressor_type = "RF"
+    elif inference_mode == "extra_trees":
+        regressor_type = "ET"
+    else:
+        raise ValueError(f"Unknown GRN inference mode: {inference_mode}")
+
     return perform_fdr(
         expression_data_aligned,
         input_grn_dict,
@@ -115,7 +129,8 @@ def grnboost2_fdr(
         verbose,
         num_permutations,
         output_dir,
-        scale_for_tf_sampling
+        scale_for_tf_sampling,
+        regressor_type
     )
 
 
