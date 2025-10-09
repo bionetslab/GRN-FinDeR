@@ -1,7 +1,7 @@
 
 import copy
 from arboreto.core import EARLY_STOP_WINDOW_LENGTH, SGBM_KWARGS, DEMON_SEED, to_tf_matrix, target_gene_indices, clean, \
-    fit_model, to_links_df, RF_KWARGS, ET_KWARGS
+    fit_model, to_links_df, RF_KWARGS, ET_KWARGS, XGB_KWARGS
 from arboreto.fdr_utils import compute_correlation_distance_matrix, compute_wasserstein_distance_matrix, cluster_genes_to_dict, merge_gene_clusterings, compute_medoids, partition_input_grn, invert_tf_to_cluster_dict, count_helper, subset_tf_matrix, _prepare_client, _prepare_input
 import numpy as np
 import pandas as pd
@@ -109,6 +109,8 @@ def perform_fdr(
         regressor_args = RF_KWARGS
     elif regressor_type == "ET":
         regressor_args = ET_KWARGS
+    elif regressor_type == "XGB":
+        regressor_args = XGB_KWARGS
     else:
         raise ValueError(f"Unknown regressor type: {regressor_type}")
 
@@ -170,7 +172,7 @@ def diy_fdr(expression_data,
            * a pandas DataFrame (rows=observations, columns=genes)
            * a dense 2D numpy.ndarray
            * a sparse scipy.sparse.csc_matrix
-    :param regressor_type: string. One of: 'RF', 'GBM', 'ET'. Case insensitive.
+    :param regressor_type: string. One of: 'RF', 'GBM', 'ET', 'XGB'. Case insensitive.
     :param regressor_kwargs: a dictionary of key-value pairs that configures the regressor.
     :param gene_names: optional list of gene names (strings). Required when a (dense or sparse) matrix is passed as
                        'expression_data' instead of a DataFrame.
