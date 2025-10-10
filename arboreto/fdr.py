@@ -1,7 +1,7 @@
 
 import copy
 from arboreto.core import EARLY_STOP_WINDOW_LENGTH, SGBM_KWARGS, DEMON_SEED, to_tf_matrix, target_gene_indices, clean, \
-    fit_model, to_links_df, RF_KWARGS, ET_KWARGS, XGB_KWARGS
+    fit_model, to_links_df, RF_KWARGS, ET_KWARGS, XGB_KWARGS, LASSO_KWARGS
 from arboreto.fdr_utils import compute_correlation_distance_matrix, compute_wasserstein_distance_matrix, cluster_genes_to_dict, merge_gene_clusterings, compute_medoids, partition_input_grn, invert_tf_to_cluster_dict, count_helper, subset_tf_matrix, _prepare_client, _prepare_input
 import numpy as np
 import pandas as pd
@@ -111,6 +111,8 @@ def perform_fdr(
         regressor_args = ET_KWARGS
     elif regressor_type == "XGB":
         regressor_args = XGB_KWARGS
+    elif regressor_type == "LASSO":
+        regressor_args = LASSO_KWARGS
     else:
         raise ValueError(f"Unknown regressor type: {regressor_type}")
 

@@ -5,7 +5,8 @@ from multiprocessing.managers import Value
 
 import pandas as pd
 from distributed import Client, LocalCluster
-from arboreto.core import create_graph, SGBM_KWARGS, RF_KWARGS, EARLY_STOP_WINDOW_LENGTH, ET_KWARGS, XGB_KWARGS
+from arboreto.core import create_graph, SGBM_KWARGS, RF_KWARGS, EARLY_STOP_WINDOW_LENGTH, ET_KWARGS, XGB_KWARGS, \
+    LASSO_KWARGS
 from arboreto.fdr import perform_fdr
 import os
 
@@ -50,7 +51,7 @@ def grnboost2_fdr(
         :param num_permutations: Number of permutations to run for empirical P-value computation.
         :param output_dir: Directory where to write intermediate results to.
         :param scale_for_tf_sampling: Whether to additionally report number of occurences of edges across all permutations.
-        :param inference_mode: Which underlying GRN inference tool to use, one of 'grnboost2', 'genie3', 'extra_trees', 'xgboost'.
+        :param inference_mode: Which underlying GRN inference tool to use, one of 'grnboost2', 'genie3', 'extra_trees', 'xgboost', 'lasso'.
         :return: a pandas DataFrame['TF', 'target', 'importance', 'pvalue'] representing the FDR-controlled gene regulatory links.
     """
     if cluster_representative_mode not in {'medoid', 'random', 'all_genes'}:
@@ -112,6 +113,8 @@ def grnboost2_fdr(
         regressor_type = "ET"
     elif inference_mode == "xgboost":
         regressor_type = "XGB"
+    elif inference_mode == "lasso":
+        regressor_type = "LASSO"
     else:
         raise ValueError(f"Unknown GRN inference mode: {inference_mode}")
 
@@ -260,6 +263,37 @@ def xgboost(expression_data,
     """
 
     return diy(expression_data=expression_data, regressor_type='XGB', regressor_kwargs=XGB_KWARGS,
+               gene_names=gene_names, tf_names=tf_names, client_or_address=client_or_address,
+               limit=limit, seed=seed, verbose=verbose)
+
+def lasso(expression_data,
+           gene_names=None,
+           tf_names='all',
+           client_or_address='local',
+           limit=None,
+           seed=None,
+           verbose=False):
+    """
+    Launch arboreto with [lasso] profile.
+
+    :param expression_data: one of:
+           * a pandas DataFrame (rows=observations, columns=genes)
+           * a dense 2D numpy.ndarray
+           * a sparse scipy.sparse.csc_matrix
+    :param gene_names: optional list of gene names (strings). Required when a (dense or sparse) matrix is passed as
+                       'expression_data' instead of a DataFrame.
+    :param tf_names: optional list of transcription factors. If None or 'all', the list of gene_names will be used.
+    :param client_or_address: one of:
+           * None or 'local': a new Client(LocalCluster()) will be used to perform the computation.
+           * string address: a new Client(address) will be used to perform the computation.
+           * a Client instance: the specified Client instance will be used to perform the computation.
+    :param limit: optional number (int) of top regulatory links to return. Default None.
+    :param seed: optional random seed for the regressors. Default None.
+    :param verbose: print info.
+    :return: a pandas DataFrame['TF', 'target', 'importance'] representing the inferred gene regulatory links.
+    """
+
+    return diy(expression_data=expression_data, regressor_type='LASSO', regressor_kwargs=LASSO_KWARGS,
                gene_names=gene_names, tf_names=tf_names, client_or_address=client_or_address,
                limit=limit, seed=seed, verbose=verbose)
 
