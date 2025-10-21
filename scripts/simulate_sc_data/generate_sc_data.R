@@ -5,18 +5,7 @@ library(ggplot2)
 library(dplyr)
 
 
-#' @title Subsample and Sparsify a Gene Regulatory Network
-#'
-#' @description
-#' This function takes a gene regulatory network and subsamples it to a
-#' specified number of source and target nodes. It then sparsifies the
-#' network by limiting the number of outgoing connections for each source node.
-#'
-#' @param network A data frame or data.table representing the network.
-#' @param num_sources The desired number of unique source nodes.
-#' @param max_out_degree The maximum number of outgoing connections per source.
-#'
-#' @return A sparsified and subsampled network data.table.
+
 subsample_and_sparsify_network <- function(network, num_sources, max_out_degree) {
   # Convert to data.table for efficient manipulation
   network_dt <- as.data.table(network)
@@ -46,18 +35,12 @@ subsample_and_sparsify_network <- function(network, num_sources, max_out_degree)
     ungroup() %>%
     as.data.table()
 
+    sparsified_subnetwork<-sparsified_subnetwork[!(source %in% sparsified_subnetwork$target)]
+
   return(sparsified_subnetwork)
 }
 
-
-create_datasets<-function(collectri_net, outpath, num_sources = 100, max_out_degree=20, n_datasets = 1){
-  # Number of datasets to simulate
-  n_datasets <- 10
-  # Simulation parameters for each dataset
-  num_sources <- 100
-  max_out_degree <- 20 # Maximum outgoing connections per source node
-
-
+create_datasets<-function(collectri_net, outpath, num_sources = 5, max_out_degree=20, n_datasets = 10, n_cells = 1000){
 
   for(i in 1:n_datasets){
     net_sub <- subsample_and_sparsify_network(
@@ -66,14 +49,15 @@ create_datasets<-function(collectri_net, outpath, num_sources = 100, max_out_deg
       max_out_degree = max_out_degree
     )
 
-    net_sub$mor<-5
-
+    net_sub$mor<-rnorm(nrow(net_sub), mean=5, sd = 1)
+    net_sub<-as.data.table(net_sub)
     network_folder<-file.path(outpath, 'nets')
     if(!dir.exists(network_folder)){
       dir.create(network_folder, recursive = T)
     }
-    network_file<- file.path(network_folder, paste0('network_', i, '.tsv' ))
 
+    network_file<- file.path(network_folder, paste0('network_', i, '.tsv' ))
+    print(network_file)
     # save network into file
     fwrite(net_sub, network_file, sep = '\t')
 
@@ -81,18 +65,24 @@ create_datasets<-function(collectri_net, outpath, num_sources = 100, max_out_deg
     results <- sim_true_counts(list(
       # required options
       GRN = net_sub,
-      tree = Phyla1(),
-      num.cells = 1000,
+      tree = Phyla1(), # 1 cluster
+      num.cells = n_cells,
       # optional options
-      num.cif = 50,
+      num.cif = 40, 
       discrete.cif = T, # one discrete population
-      cif.sigma = 0.1,
-      speed.up = T
+      cif.sigma = 0.25, 
+      speed.up = T,
+      diff.cif.fraction=0.05, #Dial up GRN effect as far as possible
+      unregulated.gene.ratio = 0.05, # Dial down number of random genes as far as possible
+      do.velocity=FALSE,
+      intrinsic.noise = 1.0 # add some noise
     ))
+    plot_gene_module_cor_heatmap(results)
 
-    gex_data<-as.data.table(results$counts)
+
+    gex_data <-as.data.frame(results$counts)
     gex_data$gene<-rownames(results$counts)
-    gex_data<-gex_data[, c(1001, 1:1000)]
+    gex_data<-gex_data[, c(n_cells+1, 1:n_cells)]
 
     data_folder<-file.path(outpath, 'data')
     if(!dir.exists(data_folder)){
@@ -100,16 +90,26 @@ create_datasets<-function(collectri_net, outpath, num_sources = 100, max_out_deg
     }
     data_file<- file.path(data_folder, paste0('data_', i, '.tsv' ))
 
-    fwrite(gex_data, data_file, sep = '\t', row.names = T)
+    fwrite(gex_data, file=data_file, sep = '\t', row.names = F)
 
 
     # save plot verifying there is one single cluster
     plot_file<- file.path(data_folder, paste0('data_', i, '_plot.pdf' ))
     plot_data<-plot_tsne(results$counts, results$cell_meta$pop)+theme_bw()+xlab('TSNE1')+ylab('TSNE2')
     ggsave(plot_data, file = plot_file, height = 15, width = 16, units = 'cm')
+
+    # save plot verifying there is one single cluster
+
+    #plot_file<- file.path(data_folder, paste0('data_', i, '_heatmap.pdf' ))
+    #ggsave(data_plot, file = plot_file, height = 15, width = 16, units = 'cm')
+
   }
+  return(results)
 }
 
+collectri<-decoupleR::get_collectri()
 
-collectri_net <- decoupleR::get_collectri()
-create_datasets(collectri_net, 'Documents/GRN-FinDeR/data/sc_simulated_data', n_datasets = 10)
+
+dataset <- create_datasets(collectri, '/home/bionets-og86asub/Documents/GRN-FinDeR/data/sc_simulated_data/5_sources', num_sources = 5, max_out_degree = 50, n_datasets = 10, n_cells = 500)
+dataset <- create_datasets(collectri, '/home/bionets-og86asub/Documents/GRN-FinDeR/data/sc_simulated_data/10_sources', num_sources = 10, max_out_degree = 40, n_datasets = 10, n_cells = 500)
+dataset <- create_datasets(collectri, '/home/bionets-og86asub/Documents/GRN-FinDeR/data/sc_simulated_data/20_sources', num_sources = 20, max_out_degree = 20, n_datasets = 10, n_cells = 500)
