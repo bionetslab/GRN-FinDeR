@@ -266,7 +266,7 @@ def compute_grn_similarity_and_cluster():
         for cluster_name in clusters_names:
 
             # Load the GRN
-            grn = pd.read_csv(os.path.join(res_p, f'{name}_grn_w_pvals.csv'), index_col=0)
+            grn = pd.read_csv(os.path.join(res_p, f'{cluster_name}_grn_w_pvals.csv'), index_col=0)
 
             # Scale P-values
             max_occurence = max(grn['shuffled_occurences'])
