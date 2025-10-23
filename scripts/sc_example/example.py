@@ -200,16 +200,93 @@ def p_value_calculation():
                 input_grn=grn,
                 seed=42,
                 verbose=True,
-                num_permutations=100,
+                num_permutations=1000,
                 scale_for_tf_sampling=True,
-                inference_mode='grnboost2'
+                inference_mode='grnboost2',
             )
 
             grn.to_csv(os.path.join(res_p, f'{cluster}_grn_w_pvals.csv'))
 
 
+def compute_grn_similarity_and_cluster():
 
+    import warnings
+    warnings.filterwarnings('ignore', category=FutureWarning, module='scanpy')
 
+    import os
+    import itertools
+    import pandas as pd
+    import scanpy as sc
+
+    names = ['paul15', 'setty19']
+    res_ps = ['./results/paul15', './results/setty19']
+
+    name_to_cluster_names = {
+        'paul15': [
+            '1Ery', '2Ery', '3Ery', '4Ery', '5Ery', '6Ery', '7MEP', '8Mk', '9GMP', '10GMP',
+            '11DC', '12Baso', '13Baso', '14Mo', '15Mo', '16Neu', '17Neu', '18Eos', '19Lymph'
+        ],
+        'setty19': ['CLP', 'DCs', 'Ery_1', 'Ery_2', 'HSC_1', 'HSC_2', 'Mega', 'Mono_1', 'Mono_2', 'Precursors'],
+    }
+
+    fdr_threshold = 0.05
+
+    def compute_jaccard_similarity_matrix(cluster_name_to_edge_set: dict) -> pd.DataFrame:
+        """
+        Compute Jaccard similarity matrix from a dict mapping cluster name -> set of edges.
+        Each edge set is a set of (TF, target) tuples.
+        """
+        clusters = list(cluster_name_to_edge_set.keys())
+        sim_mat = pd.DataFrame(0.0, index=clusters, columns=clusters)
+
+        for cl1, cl2 in itertools.combinations_with_replacement(clusters, 2):
+            edges1 = cluster_name_to_edge_set.get(cl1, set())
+            edges2 = cluster_name_to_edge_set.get(cl2, set())
+
+            if len(edges1) == 0 and len(edges2) == 0:
+                sim = 1.0
+            elif len(edges1) == 0 or len(edges2) == 0:
+                sim = 0.0
+            else:
+                inter = len(edges1 & edges2)
+                union = len(edges1 | edges2)
+                sim = inter / union if union > 0 else 0.0
+
+            sim_mat.loc[cl1, cl2] = sim
+            sim_mat.loc[cl2, cl1] = sim
+
+        return sim_mat
+
+    for name, res_p in zip(names, res_ps):
+
+        clusters_names = name_to_cluster_names[name]
+
+        cluster_name_to_edge_set_base = dict()
+        cluster_name_to_edge_set_fdr = dict()
+        for cluster_name in clusters_names:
+
+            # Load the GRN
+            grn = pd.read_csv(os.path.join(res_p, f'{cluster_name}_grn_w_pvals.csv'), index_col=0)
+
+            # Scale P-values
+            max_occurence = max(grn['shuffled_occurences'])
+            grn['pvalue_scaled'] = grn['pvalue'] * (max_occurence + 1.0) / (grn['shuffled_occurences'] + 1.0)
+
+            # Threshold and prune edges
+            grn_fdr = grn[grn['pvalue_scaled'] <= fdr_threshold].copy()
+
+            # Todo: benjamini-hochberg
+
+            # Extract edge sets
+            cluster_name_to_edge_set_base[cluster_name] = set(zip(grn['TF'], grn['target']))
+            cluster_name_to_edge_set_fdr[cluster_name] = set(zip(grn_fdr['TF'], grn_fdr['target']))
+
+        sim_mat_base = compute_jaccard_similarity_matrix(cluster_name_to_edge_set_base)
+        sim_mat_fdr = compute_jaccard_similarity_matrix(cluster_name_to_edge_set_fdr)
+
+        print(f'# --- {name} --- #')
+        print(f'# Sim mat base:\n{sim_mat_base}')
+        print(f'# Sim mat fdr:\n{sim_mat_fdr}')
 
 
 if __name__ == '__main__':
@@ -219,6 +296,8 @@ if __name__ == '__main__':
     # input_grn_inference()
 
     # p_value_calculation()
+
+    compute_grn_similarity_and_cluster()
 
     print('done')
 
